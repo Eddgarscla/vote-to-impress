@@ -1,0 +1,54 @@
+import { Link } from "@tanstack/react-router";
+import { Heart, MessageCircle } from "lucide-react";
+import { Avatar } from "@/components/avatar";
+import { cn } from "@/lib/cn";
+import { compact } from "@/lib/vti/format";
+import type { PostCard as Post } from "@/lib/vti/types";
+
+export function PostCard({ post, onLike }: { post: Post; onLike: (post: Post) => void }) {
+  return (
+    <article className="border-b border-line px-3 pb-4">
+      <div className="flex items-center gap-3 px-1 py-3">
+        <Link to="/u/$username" params={{ username: post.author.username }} className="flex min-w-0 items-center gap-3">
+          <Avatar src={post.author.avatarUrl} name={post.author.username} />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{post.author.username}</span>
+            {post.challenge ? <span className="block truncate text-xs tracking-wide text-accent uppercase">{post.challenge.title}</span> : null}
+          </span>
+        </Link>
+      </div>
+      <Link to="/p/$postId" params={{ postId: post.id }} className="look-frame block overflow-hidden rounded-3xl bg-chip">
+        <img src={post.imageUrl} alt={post.caption || `Look by ${post.author.username}`} className="aspect-[4/5] w-full object-cover" />
+      </Link>
+      <div className="flex items-center gap-1 px-2 pt-1">
+        <button
+          type="button"
+          aria-pressed={post.likedByMe}
+          aria-label={post.likedByMe ? "Unlike" : "Like"}
+          onClick={() => onLike(post)}
+          className="inline-flex h-11 items-center gap-1.5 rounded-full px-2 text-sm"
+        >
+          <Heart className={cn("size-5", post.likedByMe && "fill-accent text-accent")} />
+          <span className="tabular-nums">{compact(post.likeCount)}</span>
+        </button>
+        <Link
+          to="/p/$postId"
+          params={{ postId: post.id }}
+          aria-label="Comments"
+          className="inline-flex h-11 items-center gap-1.5 rounded-full px-2 text-sm"
+        >
+          <MessageCircle className="size-5" />
+          <span className="tabular-nums">{compact(post.commentCount)}</span>
+        </Link>
+      </div>
+      {post.caption ? (
+        <p className="px-4 pb-3 text-sm leading-snug">
+          <Link to="/u/$username" params={{ username: post.author.username }} className="mr-1.5 font-medium">
+            {post.author.username}
+          </Link>
+          {post.caption}
+        </p>
+      ) : null}
+    </article>
+  );
+}

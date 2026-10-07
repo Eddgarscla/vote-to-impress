@@ -1,0 +1,155 @@
+I tested the preview and found both a blocking startup issue and a major visual-direction issue. Please fix both while preserving the existing real app architecture and functionality.
+
+1. FIX THE PREVIEW STARTUP / LOADING ISSUE FIRST
+
+The first time I opened the preview, the app loaded and I could see the populated feed. After closing it and trying to open it again, the preview became stuck on the initial/loading screen and would not reach the app.
+
+Please diagnose and fix this before anything else.
+
+Check:
+
+* authentication/session initialization
+* PostgreSQL/database connection
+* initial data loading
+* routing
+* loading states
+* any dependency that can prevent the app from reaching the first screen
+
+The app must reliably handle these states:
+
+NEW VISITOR → Welcome/Auth screen
+AUTHENTICATED USER → Home
+LOADING → clear loading state, but never an endless blank/stuck screen
+ERROR → clear error message + retry option
+
+Do not remove or fake the existing authentication or database to solve this. Keep Better Auth and the real PostgreSQL architecture.
+
+After fixing it, verify that the preview can be closed and reopened successfully.
+
+2. FIX THE FIRST-TIME AUTHENTICATION EXPERIENCE
+
+When I first opened the app, it looked like I was already inside a populated social feed. I could not immediately find Create Account or Sign In.
+
+That is not the desired first-time experience.
+
+A completely new visitor must clearly see:
+
+* Create Account
+* Sign In
+
+Only authenticated users should enter the personalized Home experience.
+
+Keep the existing real account system:
+
+* username
+* email
+* password
+* optional profile photo
+* persistent user account
+* real database storage
+
+Make Sign Out clearly accessible from Profile so the authentication flow can be tested.
+
+Do not replace authentication with demo/fake login.
+
+3. REDESIGN THE VISUAL IDENTITY
+
+The current beige, muted and generic social-media aesthetic is NOT the direction for Vote to Impress.
+
+Do not make it look like a beige Instagram, Pinterest, Canva or generic lifestyle app.
+
+The new visual identity should feel like:
+
+3D fashion game + dark social network + cute digital world + high-fashion editorial + futuristic/camp.
+
+Think of Vote to Impress as a dark, glamorous 3D fashion universe where users show their characters, collect looks, compete in challenges and vote for each other.
+
+VISUAL DIRECTION:
+
+* dark backgrounds: black, charcoal, deep plum, deep navy and rich dark tones
+* glossy/electric accent colours mixed with tasteful soft pastel accents
+* dimensional 3D/game-inspired UI
+* subtle glow, shine and depth
+* premium fashion-editorial feeling
+* youthful, edgy, glamorous and slightly camp
+* cute details without becoming childish
+* futuristic fashion-game atmosphere
+* polished mobile-first interface
+* visually interesting cards and components without becoming cluttered
+
+PROFILE / AVATAR DIRECTION:
+The current realistic human profile-photo feeling does not fit the identity.
+
+Profiles should feel connected to fashion-game characters and 3D avatars. Support character/avatar imagery as the visual language of the community.
+
+However, do NOT remove the option for users to upload a real profile photo if the existing account system supports it. The visual design should simply make the 3D fashion/avatar aesthetic feel like the natural identity of the platform.
+
+POSTS:
+The user’s actual fashion looks must remain the star of the feed.
+
+Challenges and submitted looks should feel like fashion-game/editorial content, not generic social-media posts.
+
+4. PRESERVE EVERYTHING THAT ALREADY WORKS
+
+Do NOT rebuild the application from scratch.
+
+Do NOT remove or simplify:
+
+* real authentication
+* PostgreSQL database
+* user accounts
+* profiles
+* followers/following
+* likes
+* comments
+* Explore
+* For You / Following feed
+* image uploads
+* crop/reposition/zoom
+* Challenges
+* challenge submissions
+* voting
+* rankings
+* Impress Points
+* wins and Top 3s
+* screenshot guide
+* existing database migrations
+* existing demo content
+
+Do NOT replace real functionality with mock data just to make the preview look better.
+
+Keep the current React + TanStack Start + Tailwind + Better Auth + PostgreSQL architecture.
+
+5. IMPORTANT: PRESERVE PROJECT CONTINUITY
+
+Keep the complete existing project and its structure.
+
+Do not create a separate replacement app.
+
+The project must remain editable and publishable from this same project, with the database schema/migrations, screens, authentication setup and media assets preserved.
+
+After making these changes, verify the complete flow:
+
+New visitor
+→ Welcome
+→ Create Account / Sign In
+→ Home
+→ Explore
+→ Profile
+→ Create Post
+→ Challenge
+→ Vote
+→ Ranking
+
+Also verify:
+
+Close preview
+→ Reopen preview
+→ App loads correctly again.
+
+The priority order is:
+
+1. Fix startup/loading reliability.
+2. Fix the Welcome/Auth flow.
+3. Apply the new dark 3D fashion-game visual identity.
+4. Verify that all existing functionality still works.
