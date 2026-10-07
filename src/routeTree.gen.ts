@@ -14,6 +14,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppCreateRouteImport } from './routes/_app/create'
 import { Route as AppExploreRouteImport } from './routes/_app/explore'
+import { Route as AppFounderRouteImport } from './routes/_app/founder'
 import { Route as AppHomeRouteImport } from './routes/_app/home'
 import { Route as AppLookPopRouteImport } from './routes/_app/look-pop'
 import { Route as AppProfileRouteImport } from './routes/_app/profile'
@@ -45,6 +46,11 @@ const AppCreateRoute = AppCreateRouteImport.update({
 const AppExploreRoute = AppExploreRouteImport.update({
   id: '/explore',
   path: '/explore',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFounderRoute = AppFounderRouteImport.update({
+  id: '/founder',
+  path: '/founder',
   getParentRoute: () => AppRoute,
 } as any)
 const AppHomeRoute = AppHomeRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/create': typeof AppCreateRoute
   '/explore': typeof AppExploreRoute
+  '/founder': typeof AppFounderRoute
   '/home': typeof AppHomeRoute
   '/look-pop': typeof AppLookPopRoute
   '/profile': typeof AppProfileRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/create': typeof AppCreateRoute
   '/explore': typeof AppExploreRoute
+  '/founder': typeof AppFounderRoute
   '/home': typeof AppHomeRoute
   '/look-pop': typeof AppLookPopRoute
   '/profile': typeof AppProfileRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_app/create': typeof AppCreateRoute
   '/_app/explore': typeof AppExploreRoute
+  '/_app/founder': typeof AppFounderRoute
   '/_app/home': typeof AppHomeRoute
   '/_app/look-pop': typeof AppLookPopRoute
   '/_app/profile': typeof AppProfileRoute
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/create'
     | '/explore'
+    | '/founder'
     | '/home'
     | '/look-pop'
     | '/profile'
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/create'
     | '/explore'
+    | '/founder'
     | '/home'
     | '/look-pop'
     | '/profile'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_app/create'
     | '/_app/explore'
+    | '/_app/founder'
     | '/_app/home'
     | '/_app/look-pop'
     | '/_app/profile'
@@ -221,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: '/explore'
       fullPath: '/explore'
       preLoaderRoute: typeof AppExploreRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/founder': {
+      id: '/_app/founder'
+      path: '/founder'
+      fullPath: '/founder'
+      preLoaderRoute: typeof AppFounderRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/home': {
@@ -285,6 +304,7 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppCreateRoute: typeof AppCreateRoute
   AppExploreRoute: typeof AppExploreRoute
+  AppFounderRoute: typeof AppFounderRoute
   AppHomeRoute: typeof AppHomeRoute
   AppLookPopRoute: typeof AppLookPopRoute
   AppProfileRoute: typeof AppProfileRoute
@@ -297,6 +317,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppCreateRoute: AppCreateRoute,
   AppExploreRoute: AppExploreRoute,
+  AppFounderRoute: AppFounderRoute,
   AppHomeRoute: AppHomeRoute,
   AppLookPopRoute: AppLookPopRoute,
   AppProfileRoute: AppProfileRoute,

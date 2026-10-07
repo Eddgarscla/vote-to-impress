@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Heart } from "lucide-react";
 import { useState } from "react";
 import { Avatar } from "@/components/avatar";
@@ -6,7 +6,9 @@ import { TopBar } from "@/components/shell";
 import { Button, ErrorNote, LoadingBlock, TextArea } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { ago, compact } from "@/lib/vti/format";
-import { addComment, getPost, toggleLike } from "@/lib/vti/server";
+import { LookGallery } from "@/components/gallery";
+import { VerifiedMark } from "@/components/verified";
+import { addComment, deletePost, getPost, toggleLike, updatePost } from "@/lib/vti/server";
 import { useQuery } from "@/lib/vti/use-query";
 
 export const Route = createFileRoute("/_app/p/$postId")({ component: PostPage });
@@ -14,6 +16,9 @@ export const Route = createFileRoute("/_app/p/$postId")({ component: PostPage })
 function PostPage() {
   const { postId } = Route.useParams();
   const query = useQuery(postId, () => getPost({ data: { id: postId } }));
+  const navigate = useNavigate();
+  const [caption, setCaption] = useState("");
+  const [editing, setEditing] = useState(false);
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -63,12 +68,15 @@ function PostPage() {
       {data === null && !query.loading && !query.error ? <ErrorNote message="That look is not here." /> : null}
       {data ? (
         <article>
-          <img src={data.post.imageUrl} alt={data.post.caption || "Look"} className="aspect-[4/5] w-full bg-chip object-cover" />
+          <LookGallery images={data.post.images?.length ? data.post.images : [data.post.imageUrl]} alt={data.post.caption || "Look"} />
           <div className="flex items-center gap-3 px-4 py-3">
             <Link to="/u/$username" params={{ username: data.post.author.username }} className="flex min-w-0 flex-1 items-center gap-3">
               <Avatar src={data.post.author.avatarUrl} name={data.post.author.username} />
               <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{data.post.author.username}</span>
+                <span className="flex items-center gap-1 truncate text-sm font-medium">
+                  {data.post.author.username}
+                  {data.post.author.verified ? <VerifiedMark /> : null}
+                </span>
                 <span className="block text-xs text-muted">{ago(data.post.createdAt)}</span>
               </span>
             </Link>
@@ -85,6 +93,48 @@ function PostPage() {
             </p>
           ) : null}
           {data.post.caption ? <p className="px-4 pb-4 text-sm">{data.post.caption}</p> : null}
+          {data.mine ? (
+            <div className="space-y-2 px-4 pb-4">
+              {editing ? (
+                <form
+                  className="space-y-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void updatePost({ data: { postId, caption } }).then((res) => {
+                      if (!res.ok) {
+                        setError(res.error);
+                        return;
+                      }
+                      query.setData({ ...data, post: { ...data.post, caption: caption.trim() } });
+                      setEditing(false);
+                    });
+                  }}
+                >
+                  <TextArea value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={300} rows={3} />
+                  <Button type="submit">Save caption</Button>
+                </form>
+              ) : (
+                <button type="button" className="text-sm underline underline-offset-4" onClick={() => { setCaption(data.post.caption); setEditing(true); }}>
+                  Edit caption
+                </button>
+              )}
+              <button
+                type="button"
+                className="block text-sm text-accent underline underline-offset-4"
+                onClick={() => {
+                  void deletePost({ data: { postId } }).then((res) => {
+                    if (!res.ok) {
+                      setError(res.error);
+                      return;
+                    }
+                    void navigate({ to: "/profile" });
+                  });
+                }}
+              >
+                Delete look
+              </button>
+            </div>
+          ) : null}
           <section className="border-t border-line px-4 py-4">
             <h2 className="text-sm font-medium">{data.comments.length} comments</h2>
             <ul className="mt-3 space-y-4">

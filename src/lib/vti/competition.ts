@@ -132,6 +132,7 @@ export async function finalizeCompetitions(sql: Sql) {
     select c.id
     from challenges c
     where c.is_demo = false
+      and coalesce(c.cancelled, false) = false
       and c.results_published = false
       and coalesce(c.voting_close, c.end_date) <= now()
   `;

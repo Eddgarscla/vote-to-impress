@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Heart, MessageCircle } from "lucide-react";
 import { Avatar } from "@/components/avatar";
+import { LookGallery } from "@/components/gallery";
+import { VerifiedMark } from "@/components/verified";
 import { cn } from "@/lib/cn";
 import { compact } from "@/lib/vti/format";
 import type { PostCard as Post } from "@/lib/vti/types";
@@ -12,13 +14,17 @@ export function PostCard({ post, onLike }: { post: Post; onLike: (post: Post) =>
         <Link to="/u/$username" params={{ username: post.author.username }} className="flex min-w-0 items-center gap-3">
           <Avatar src={post.author.avatarUrl} name={post.author.username} />
           <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">{post.author.username}</span>
+            <span className="flex items-center gap-1 truncate text-sm font-medium">
+              {post.author.username}
+              {post.author.verified ? <VerifiedMark /> : null}
+              {post.author.isTest ? <span className="text-xs text-muted">Test</span> : null}
+            </span>
             {post.challenge ? <span className="block truncate text-xs tracking-wide text-accent uppercase">{post.challenge.title}</span> : null}
           </span>
         </Link>
       </div>
       <Link to="/p/$postId" params={{ postId: post.id }} className="look-frame block overflow-hidden rounded-3xl bg-chip">
-        <img src={post.imageUrl} alt={post.caption || `Look by ${post.author.username}`} className="aspect-[4/5] w-full object-cover" />
+        <LookGallery images={post.images?.length ? post.images : [post.imageUrl]} alt={post.caption || `Look by ${post.author.username}`} />
       </Link>
       <div className="flex items-center gap-1 px-2 pt-1">
         <button

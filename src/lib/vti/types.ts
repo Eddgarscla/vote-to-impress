@@ -9,11 +9,14 @@ export type Author = {
   id: string;
   username: string;
   avatarUrl: string | null;
+  verified?: boolean;
+  isTest?: boolean;
 };
 
 export type PostCard = {
   id: string;
   imageUrl: string;
+  images: string[];
   caption: string;
   createdAt: string;
   likeCount: number;
@@ -57,13 +60,27 @@ export type ProfilePayload = {
   challengeWins: number;
   topPlacements: number;
   role: "member" | "founder";
+  verified: boolean;
+  isTest: boolean;
   levelKey: string;
   levelLabel: string;
+  nextAt: number | null;
+  nextLabel: string | null;
+  displayName: string;
+  pronouns: string;
+  location: string;
+  website: string;
+  instagram: string;
+  tiktok: string;
+  xHandle: string;
+  robloxUsername: string;
+  robloxUrl: string;
+  showPersonal: boolean;
   posts: ProfilePost[];
   placements: Placement[];
 };
 
-export type ChallengePhase = "upcoming" | "open" | "voting" | "ended";
+export type ChallengePhase = "upcoming" | "open" | "voting" | "paused" | "ended";
 
 export type ChallengeSummary = {
   id: string;
@@ -83,6 +100,8 @@ export type ChallengeSummary = {
   voteBudget: number;
   isDemo: boolean;
   seasonId: string;
+  kind: "weekly" | "monthly";
+  active: boolean;
 };
 
 export type RankedLook = {
@@ -175,6 +194,62 @@ export type ExplorePayload = {
   trending: ExploreLook[];
   winners: WinnerCard[];
   lookbook: ExploreLook[];
+};
+
+export type LevelStep = { key: string; label: string; min: number };
+
+export type FounderChallengeRow = {
+  id: string;
+  title: string;
+  description: string;
+  theme: string;
+  kind: "weekly" | "monthly";
+  phase: ChallengePhase;
+  active: boolean;
+  cancelled: boolean;
+  startDate: string;
+  endDate: string;
+  participants: number;
+  votes: number;
+  pointsFirst: number;
+  pointsSecond: number;
+  pointsThird: number;
+  resultsPublic: boolean;
+  ranking: { username: string; votes: number }[];
+};
+
+export type FounderRequest = {
+  id: string;
+  userId: string;
+  username: string;
+  message: string;
+  status: string;
+  followers: number;
+  impressPoints: number;
+  levelLabel: string;
+  entries: number;
+};
+
+export type FounderPerson = {
+  id: string;
+  username: string;
+  email: string | null;
+  impressPoints: number;
+  levelLabel: string;
+  verified: boolean;
+  isTest: boolean;
+  role: "member" | "founder";
+};
+
+export type FounderDesk = {
+  stats: { users: number; posts: number; votes: number; pending: number };
+  themeKey: string;
+  weeklyTheme: string;
+  monthlyTheme: string;
+  levels: LevelStep[];
+  challenges: FounderChallengeRow[];
+  requests: FounderRequest[];
+  people: FounderPerson[];
 };
 
 export type Ok = { ok: true };

@@ -1,12 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Avatar } from "@/components/avatar";
+import { AvatarCropper } from "@/components/avatar-cropper";
+import { VerifiedMark } from "@/components/verified";
 import { Button, ErrorNote, Field, LoadingBlock, TextArea, TextInput } from "@/components/ui";
 import { UserButton } from "@/lib/auth/gates";
 import { compact, placeLabel, placeMedal } from "@/lib/vti/format";
-import { compressAvatar, isLikelyImage } from "@/lib/vti/image";
-import { levelFor } from "@/lib/vti/levels";
-import { getProfile, toggleFollow, updateProfile } from "@/lib/vti/server";
+import { isLikelyImage } from "@/lib/vti/image";
+import { getProfile, requestVerification, toggleFollow, updateProfile } from "@/lib/vti/server";
 import type { ProfilePayload } from "@/lib/vti/types";
 import { useQuery } from "@/lib/vti/use-query";
 
@@ -36,9 +37,8 @@ export function ProfileView({ username }: { username?: string }) {
     return <ErrorNote message={query.error ?? "That profile is not here."} onRetry={query.reload} />;
   }
 
-  const level = levelFor(profile.impressPoints);
-  const span = level.nextAt ?? profile.impressPoints;
-  const progress = level.nextAt ? Math.min(100, Math.round((profile.impressPoints / level.nextAt) * 100)) : 100;
+  const progress = profile.nextAt ? Math.min(100, Math.round((profile.impressPoints / profile.nextAt) * 100)) : 100;
+  const span = profile.nextAt ?? profile.impressPoints;
 
   return (
     <div className="pb-nav">
@@ -46,7 +46,11 @@ export function ProfileView({ username }: { username?: string }) {
         <div className="flex items-center gap-4">
           <Avatar src={profile.avatarUrl} name={profile.username} size="xl" />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-display text-3xl leading-none">{profile.username}</h1>
+            <h1 className="flex items-center gap-2 truncate font-display text-3xl leading-none">
+              <span className="truncate">{profile.displayName || profile.username}</span>
+              {profile.verified ? <VerifiedMark /> : null}
+            </h1>
+            <p className="mt-1 text-sm text-muted">@{profile.username}</p>
             <p className="mt-2 flex flex-wrap items-center gap-2">
               {profile.role === "founder" ? <span className="founder-badge">Founder</span> : null}
               <span className="text-xs tracking-widest text-gold uppercase">{profile.levelLabel}</span>
@@ -54,10 +58,11 @@ export function ProfileView({ username }: { username?: string }) {
             <div className="mt-2 max-w-xs">
               <div className="level-pip" aria-hidden="true"><span style={{ width: `${progress}%` }} /></div>
               <p className="mt-1 text-xs text-muted">
-                {level.nextLabel ? `${profile.impressPoints} / ${span} toward ${level.nextLabel}` : "Legend. The top of the ladder."}
+                {profile.nextLabel ? `${profile.impressPoints} / ${span} toward ${profile.nextLabel}` : "Legend. The top of the ladder."}
               </p>
             </div>
             {profile.bio ? <p className="mt-2 text-sm text-ink">{profile.bio}</p> : <p className="mt-2 text-sm text-muted">No bio yet.</p>}
+            {profile.showPersonal ? <ProfileFacts profile={profile} /> : null}
           </div>
         </div>
         <dl className="mt-5 grid grid-cols-3 gap-2 text-center">
@@ -97,11 +102,12 @@ export function ProfileView({ username }: { username?: string }) {
           </ul>
         </section>
       ) : null}
-      {profile.isSelf ? (
-        <p className="px-5 pt-4 text-sm">
-          <Link to="/look-pop" className="underline underline-offset-4">Make your look pop</Link>
-        </p>
-      ) : null}
+      {profile.isSelf && profile.role === "founder" ? (
+          <p className="px-5 pt-4 text-sm">
+            <Link to="/founder" className="font-medium text-gold underline underline-offset-4">Founder dashboard</Link>
+          </p>
+        ) : null}
+        {profile.isSelf && !profile.verified ? <VerificationAsk /> : null}
       {profile.isSelf ? (
         <div className="px-5 pt-4">
           <UserButton />
@@ -137,11 +143,62 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ProfileFacts({ profile }: { profile: ProfilePayload }) {
+  const facts = [
+    profile.pronouns,
+    profile.location,
+    profile.website,
+    profile.instagram ? `IG @${profile.instagram}` : "",
+    profile.tiktok ? `TikTok @${profile.tiktok}` : "",
+    profile.xHandle ? `X @${profile.xHandle}` : "",
+    profile.robloxUsername ? `Roblox ${profile.robloxUsername}` : "",
+  ].filter(Boolean);
+  if (!facts.length && !profile.robloxUrl) return null;
+  return (
+    <p className="mt-2 text-xs text-muted">
+      {facts.join(" · ")}
+      {profile.robloxUrl ? <> · <a className="underline" href={profile.robloxUrl}>Roblox profile</a></> : null}
+    </p>
+  );
+}
+
+function VerificationAsk() {
+  const [message, setMessage] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  return (
+    <form
+      className="mx-5 mt-4 space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void requestVerification({ data: { message } }).then((res) => {
+          setNote(res.ok ? "Request sent. The Founder will review it." : res.error);
+        });
+      }}
+    >
+      <Field label="Ask for verification">
+        <TextArea value={message} onChange={(e) => setMessage(e.target.value)} maxLength={400} rows={2} placeholder="Tell the Founder why this account should be verified." />
+      </Field>
+      <Button type="submit" variant="line">Send request</Button>
+      {note ? <p className="text-sm text-muted">{note}</p> : null}
+    </form>
+  );
+}
+
 function Editor({ profile, onSaved }: { profile: ProfilePayload; onSaved: (next: ProfilePayload) => void }) {
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState(profile.username);
+  const [displayName, setDisplayName] = useState(profile.displayName);
   const [bio, setBio] = useState(profile.bio);
+  const [pronouns, setPronouns] = useState(profile.pronouns);
+  const [location, setLocation] = useState(profile.location);
+  const [website, setWebsite] = useState(profile.website);
+  const [instagram, setInstagram] = useState(profile.instagram);
+  const [tiktok, setTiktok] = useState(profile.tiktok);
+  const [xHandle, setXHandle] = useState(profile.xHandle);
+  const [robloxUsername, setRobloxUsername] = useState(profile.robloxUsername);
+  const [robloxUrl, setRobloxUrl] = useState(profile.robloxUrl);
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -157,7 +214,11 @@ function Editor({ profile, onSaved }: { profile: ProfilePayload; onSaved: (next:
     setPending(true);
     setError(null);
     const res = await updateProfile({
-      data: { username, bio, avatarDataUrl: avatar },
+      data: {
+        username, displayName, bio, pronouns, location, website, instagram, tiktok, xHandle, robloxUsername, robloxUrl,
+        showPersonal: true,
+        avatarDataUrl: avatar,
+      },
     });
     setPending(false);
     if (!res.ok) {
@@ -167,7 +228,9 @@ function Editor({ profile, onSaved }: { profile: ProfilePayload; onSaved: (next:
     onSaved({
       ...profile,
       username: res.username,
+      displayName: displayName.trim(),
       bio: bio.trim(),
+      pronouns, location, website, instagram, tiktok, xHandle, robloxUsername, robloxUrl,
       avatarUrl: avatar ?? profile.avatarUrl,
     });
     setOpen(false);
@@ -181,29 +244,50 @@ function Editor({ profile, onSaved }: { profile: ProfilePayload; onSaved: (next:
         void save();
       }}
     >
+      <Field label="Display name"><TextInput value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={40} /></Field>
       <Field label="Username" hint="Letters, numbers, underscore. 3–20.">
         <TextInput value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} maxLength={20} required />
       </Field>
-      <Field label="Bio">
-        <TextArea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={160} rows={3} />
+      <Field label="Bio"><TextArea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={160} rows={3} /></Field>
+      <Field label="Pronouns"><TextInput value={pronouns} onChange={(e) => setPronouns(e.target.value)} maxLength={40} /></Field>
+      <Field label="Location"><TextInput value={location} onChange={(e) => setLocation(e.target.value)} maxLength={60} /></Field>
+      <Field label="Website"><TextInput value={website} onChange={(e) => setWebsite(e.target.value)} maxLength={200} /></Field>
+      <Field label="Instagram"><TextInput value={instagram} onChange={(e) => setInstagram(e.target.value)} maxLength={40} /></Field>
+      <Field label="TikTok"><TextInput value={tiktok} onChange={(e) => setTiktok(e.target.value)} maxLength={40} /></Field>
+      <Field label="X"><TextInput value={xHandle} onChange={(e) => setXHandle(e.target.value)} maxLength={40} /></Field>
+      <Field label="Roblox username" hint="Optional. This does not connect your Roblox account.">
+        <TextInput value={robloxUsername} onChange={(e) => setRobloxUsername(e.target.value)} maxLength={40} />
       </Field>
+      <Field label="Roblox profile link"><TextInput value={robloxUrl} onChange={(e) => setRobloxUrl(e.target.value)} maxLength={200} /></Field>
       <Field label="Profile photo">
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          className="block w-full text-sm"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            if (!isLikelyImage(file)) {
-              setError("Use a JPG, PNG, or WebP.");
-              return;
-            }
-            void compressAvatar(file).then(setAvatar).catch((err: unknown) => {
-              setError(err instanceof Error ? err.message : "Could not use that photo.");
-            });
-          }}
-        />
+        {cropSrc ? (
+          <AvatarCropper
+            src={cropSrc}
+            onCancel={() => setCropSrc(null)}
+            onSave={(dataUrl) => {
+              setAvatar(dataUrl);
+              setCropSrc(null);
+            }}
+          />
+        ) : (
+          <>
+            {avatar ? <img src={avatar} alt="" className="mb-2 size-20 rounded-full object-cover" /> : null}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="block w-full text-sm"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (!isLikelyImage(file)) {
+                  setError("Use a JPG, PNG, or WebP.");
+                  return;
+                }
+                setCropSrc(URL.createObjectURL(file));
+              }}
+            />
+          </>
+        )}
       </Field>
       {error ? <p className="text-sm text-accent">{error}</p> : null}
       <div className="flex gap-2">

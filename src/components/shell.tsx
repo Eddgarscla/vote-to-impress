@@ -32,8 +32,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const user = boot.user;
   const floor = useQuery(user ? "floor" : "signed-out", () => (user ? getFloor() : Promise.resolve(null)));
   const THEMES = new Set(["haunted", "frost", "valentine"]);
-  const themeKey = floor.data?.themeKey ?? "gloss";
-  const seasonClass = THEMES.has(themeKey) ? `season-${themeKey}` : "";
+  const themeKey = floor.data?.themeKey ?? "";
+  const seasonClass = THEMES.has(themeKey) ? `theme-${themeKey}` : "";
 
   useEffect(() => {
     if (!user) return;
