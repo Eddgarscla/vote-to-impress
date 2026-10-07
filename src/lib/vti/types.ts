@@ -198,6 +198,14 @@ export type ExplorePayload = {
 
 export type LevelStep = { key: string; label: string; min: number };
 
+export type FounderSubmission = {
+  username: string;
+  imageUrl: string;
+  votes: number;
+  place: number | null;
+  points: number | null;
+};
+
 export type FounderChallengeRow = {
   id: string;
   title: string;
@@ -211,11 +219,16 @@ export type FounderChallengeRow = {
   endDate: string;
   participants: number;
   votes: number;
+  voters: number;
   pointsFirst: number;
   pointsSecond: number;
   pointsThird: number;
+  participationPoints: number;
+  voteBudget: number;
   resultsPublic: boolean;
   ranking: { username: string; votes: number }[];
+  submissions: FounderSubmission[];
+  winner: string | null;
 };
 
 export type FounderRequest = {
@@ -225,6 +238,7 @@ export type FounderRequest = {
   message: string;
   status: string;
   followers: number;
+  following: number;
   impressPoints: number;
   levelLabel: string;
   entries: number;
@@ -250,6 +264,7 @@ export type FounderDesk = {
   challenges: FounderChallengeRow[];
   requests: FounderRequest[];
   people: FounderPerson[];
+  testAccounts: { username: string; email: string; password: string }[];
 };
 
 export type Ok = { ok: true };

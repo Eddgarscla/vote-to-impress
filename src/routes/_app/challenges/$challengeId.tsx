@@ -90,7 +90,7 @@ function ChallengeBody({
       <img src={detail.imageUrl} alt="" className="aspect-[16/9] w-full object-cover" />
       <div className="px-4 py-4">
         <p className="text-xs font-medium text-accent">
-          {ended ? "Results" : detail.phase === "voting" ? "Voting" : detail.phase === "upcoming" ? "Soon" : "Live"} · {detail.theme}
+          {detail.kind === "monthly" ? "Monthly" : "Weekly"} · {ended ? "Results" : detail.phase === "voting" ? "Voting" : detail.phase === "upcoming" ? "Soon" : "Live"} · {detail.theme}
         </p>
         <h2 className="mt-1 font-display text-3xl leading-tight">{detail.title}</h2>
         <p className="mt-2 text-sm text-muted">{detail.description}</p>

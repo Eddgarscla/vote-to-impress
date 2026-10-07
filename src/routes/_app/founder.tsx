@@ -50,12 +50,25 @@ function Desk({ desk, reload }: { desk: FounderDesk; reload: () => void }) {
             <li key={challenge.id} className="panel rounded-3xl border border-line p-4">
               <p className="text-xs tracking-widest text-gold uppercase">{challenge.kind} · {challenge.phase}{challenge.cancelled ? " · cancelled" : ""}</p>
               <h3 className="font-display text-xl">{challenge.title}</h3>
-              <p className="text-sm text-muted">{challenge.theme}. {challenge.participants} submissions · {challenge.votes} votes. Rewards {challenge.pointsFirst}/{challenge.pointsSecond}/{challenge.pointsThird}.</p>
+              <p className="text-sm text-muted">{challenge.theme}. {challenge.participants} submissions · {challenge.votes} votes · {challenge.voters} voters. Rewards {challenge.pointsFirst}/{challenge.pointsSecond}/{challenge.pointsThird}. Everyone who enters gets {challenge.participationPoints}.</p>
+              {challenge.winner ? (
+                <p className="mt-1 text-sm">{challenge.resultsPublic || challenge.phase === "ended" ? "Winner" : "Current lead"}: {challenge.winner}</p>
+              ) : null}
               <ol className="mt-2 space-y-1 text-sm">
-                {challenge.ranking.slice(0, 5).map((row, index) => (
-                  <li key={row.username}>{index + 1}. {row.username} · {challenge.resultsPublic || challenge.phase === "ended" ? `${row.votes} votes` : `${row.votes} votes (founder only)`}</li>
+                {challenge.ranking.map((row, index) => (
+                  <li key={row.username}>{index + 1}. {row.username} · {row.votes} votes{challenge.resultsPublic ? "" : " · hidden from players"}</li>
                 ))}
               </ol>
+              {challenge.submissions.length ? (
+                <ul className="mt-3 flex gap-2 overflow-x-auto">
+                  {challenge.submissions.map((entry) => (
+                    <li key={entry.username + entry.imageUrl} className="w-16 shrink-0">
+                      <img src={entry.imageUrl} alt="" className="aspect-[3/4] w-full rounded-lg object-cover" />
+                      <p className="truncate text-[10px] text-muted">{entry.place ? `#${entry.place} ` : ""}{entry.username}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link to="/challenges/$challengeId" params={{ challengeId: challenge.id }} className="text-sm underline">Open</Link>
                 {!challenge.cancelled ? (
@@ -78,7 +91,7 @@ function Desk({ desk, reload }: { desk: FounderDesk; reload: () => void }) {
           {desk.requests.map((request) => (
             <li key={request.id} className="rounded-2xl border border-line p-3 text-sm">
               <p className="font-medium">{request.username} · {request.status}</p>
-              <p className="text-muted">{request.followers} followers · {request.impressPoints} pts · {request.levelLabel} · {request.entries} entries</p>
+              <p className="text-muted">{request.followers} followers · {request.following} following · {request.impressPoints} pts · {request.levelLabel} · {request.entries} entries</p>
               <p className="mt-1">{request.message}</p>
               {request.status === "pending" ? (
                 <div className="mt-2 flex gap-2">
@@ -108,6 +121,7 @@ function Desk({ desk, reload }: { desk: FounderDesk; reload: () => void }) {
         </ul>
       </section>
       <LevelForm levels={desk.levels} onSaved={reload} />
+      <TestAccounts accounts={desk.testAccounts} />
     </div>
   );
 }
@@ -156,12 +170,20 @@ function ChallengeForm({ onSaved }: { onSaved: () => void }) {
   const [kind, setKind] = useState<"weekly" | "monthly">("weekly");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
+  const [pointsFirst, setPointsFirst] = useState(400);
+  const [pointsSecond, setPointsSecond] = useState(180);
+  const [pointsThird, setPointsThird] = useState(90);
+  const [participationPoints, setParticipationPoints] = useState(25);
+  const [voteBudget, setVoteBudget] = useState(10);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     const res = await saveFounderChallenge({
-      data: { title, description, theme, kind, startsAt, endsAt, pointsFirst: kind === "monthly" ? 600 : 400, pointsSecond: kind === "monthly" ? 300 : 180, pointsThird: kind === "monthly" ? 150 : 90 },
+      data: {
+        title, description, theme, kind, startsAt, endsAt,
+        pointsFirst, pointsSecond, pointsThird, participationPoints, voteBudget,
+      },
     });
     if (!res.ok) {
       setError(res.error);
@@ -170,6 +192,7 @@ function ChallengeForm({ onSaved }: { onSaved: () => void }) {
     setTitle("");
     setDescription("");
     setTheme("");
+    setError(null);
     onSaved();
   }
 
@@ -177,7 +200,13 @@ function ChallengeForm({ onSaved }: { onSaved: () => void }) {
     <form className="space-y-3" onSubmit={(event) => void onSubmit(event)}>
       <h2 className="font-display text-2xl">New challenge</h2>
       <Field label="Kind">
-        <select className="h-12 w-full rounded-xl border border-line bg-surface px-3" value={kind} onChange={(e) => setKind(e.target.value as "weekly" | "monthly")}>
+        <select className="h-12 w-full rounded-xl border border-line bg-surface px-3" value={kind} onChange={(e) => {
+          const next = e.target.value as "weekly" | "monthly";
+          setKind(next);
+          setPointsFirst(next === "monthly" ? 600 : 400);
+          setPointsSecond(next === "monthly" ? 300 : 180);
+          setPointsThird(next === "monthly" ? 150 : 90);
+        }}>
           <option value="weekly">Weekly</option>
           <option value="monthly">Monthly</option>
         </select>
@@ -185,12 +214,27 @@ function ChallengeForm({ onSaved }: { onSaved: () => void }) {
       <Field label="Title"><TextInput value={title} onChange={(e) => setTitle(e.target.value)} required /></Field>
       <Field label="Theme"><TextInput value={theme} onChange={(e) => setTheme(e.target.value)} /></Field>
       <Field label="Description"><TextArea value={description} onChange={(e) => setDescription(e.target.value)} required /></Field>
-      <Field label="Starts"><TextInput type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} required /></Field>
-      <Field label="Ends"><TextInput type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} required /></Field>
+      <Field label="Starts (UTC)"><TextInput type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} required /></Field>
+      <Field label="Ends (UTC)"><TextInput type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} required /></Field>
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="1st pts"><TextInput type="number" value={pointsFirst} onChange={(e) => setPointsFirst(Number(e.target.value))} /></Field>
+        <Field label="2nd pts"><TextInput type="number" value={pointsSecond} onChange={(e) => setPointsSecond(Number(e.target.value))} /></Field>
+        <Field label="3rd pts"><TextInput type="number" value={pointsThird} onChange={(e) => setPointsThird(Number(e.target.value))} /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Entry pts"><TextInput type="number" value={participationPoints} onChange={(e) => setParticipationPoints(Number(e.target.value))} /></Field>
+        <Field label="Votes each"><TextInput type="number" value={voteBudget} onChange={(e) => setVoteBudget(Number(e.target.value))} /></Field>
+      </div>
       {error ? <p className="text-sm text-accent">{error}</p> : null}
       <Button type="submit">Create</Button>
     </form>
   );
+}
+
+function utcInput(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 16);
 }
 
 function EditChallenge({ challenge, onSaved }: { challenge: FounderDesk["challenges"][number]; onSaved: () => void }) {
@@ -198,6 +242,14 @@ function EditChallenge({ challenge, onSaved }: { challenge: FounderDesk["challen
   const [title, setTitle] = useState(challenge.title);
   const [description, setDescription] = useState(challenge.description);
   const [theme, setTheme] = useState(challenge.theme);
+  const [kind, setKind] = useState(challenge.kind);
+  const [startsAt, setStartsAt] = useState(utcInput(challenge.startDate));
+  const [endsAt, setEndsAt] = useState(utcInput(challenge.endDate));
+  const [pointsFirst, setPointsFirst] = useState(challenge.pointsFirst);
+  const [pointsSecond, setPointsSecond] = useState(challenge.pointsSecond);
+  const [pointsThird, setPointsThird] = useState(challenge.pointsThird);
+  const [participationPoints, setParticipationPoints] = useState(challenge.participationPoints);
+  const [voteBudget, setVoteBudget] = useState(challenge.voteBudget);
   const [error, setError] = useState<string | null>(null);
   if (challenge.resultsPublic || challenge.cancelled) return null;
   if (!open) return <button type="button" className="mt-2 text-sm underline" onClick={() => setOpen(true)}>Edit</button>;
@@ -212,12 +264,14 @@ function EditChallenge({ challenge, onSaved }: { challenge: FounderDesk["challen
             title,
             description,
             theme,
-            kind: challenge.kind,
-            startsAt: challenge.startDate,
-            endsAt: challenge.endDate,
-            pointsFirst: challenge.pointsFirst,
-            pointsSecond: challenge.pointsSecond,
-            pointsThird: challenge.pointsThird,
+            kind,
+            startsAt,
+            endsAt,
+            pointsFirst,
+            pointsSecond,
+            pointsThird,
+            participationPoints,
+            voteBudget,
           },
         }).then((res) => {
           if (!res.ok) {
@@ -231,6 +285,17 @@ function EditChallenge({ challenge, onSaved }: { challenge: FounderDesk["challen
       <TextInput value={title} onChange={(e) => setTitle(e.target.value)} />
       <TextInput value={theme} onChange={(e) => setTheme(e.target.value)} />
       <TextArea value={description} onChange={(e) => setDescription(e.target.value)} />
+      <select className="h-12 w-full rounded-xl border border-line bg-surface px-3" value={kind} onChange={(e) => setKind(e.target.value as "weekly" | "monthly")}>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+      <TextInput type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} aria-label="Starts UTC" />
+      <TextInput type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} aria-label="Ends UTC" />
+      <div className="grid grid-cols-3 gap-2">
+        <TextInput type="number" value={pointsFirst} onChange={(e) => setPointsFirst(Number(e.target.value))} aria-label="First place points" />
+        <TextInput type="number" value={pointsSecond} onChange={(e) => setPointsSecond(Number(e.target.value))} aria-label="Second place points" />
+        <TextInput type="number" value={pointsThird} onChange={(e) => setPointsThird(Number(e.target.value))} aria-label="Third place points" />
+      </div>
       {error ? <p className="text-sm text-accent">{error}</p> : null}
       <Button type="submit">Save challenge</Button>
     </form>
@@ -256,5 +321,22 @@ function LevelForm({ levels, onSaved }: { levels: FounderDesk["levels"]; onSaved
       ))}
       <Button type="submit">Save levels</Button>
     </form>
+  );
+}
+
+function TestAccounts({ accounts }: { accounts: FounderDesk["testAccounts"] }) {
+  return (
+    <section>
+      <h2 className="font-display text-2xl">Test accounts</h2>
+      <p className="mt-1 text-sm text-muted">Fictional players for follows, posts, votes, and verification. They never have Founder access. Password for all of them: {accounts[0]?.password}</p>
+      <ul className="mt-3 space-y-2 text-sm">
+        {accounts.map((account) => (
+          <li key={account.email}>
+            <span className="font-medium">{account.username}</span>
+            <span className="block text-muted">{account.email}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -83,6 +83,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         ) : null}
+        {floor.data?.weeklyTheme || floor.data?.monthlyTheme ? (
+          <p className="season-strip border-b border-line px-4 py-2 text-center text-xs tracking-wide text-muted">
+            {floor.data.weeklyTheme ? `This week · ${floor.data.weeklyTheme}` : null}
+            {floor.data.weeklyTheme && floor.data.monthlyTheme ? "  ·  " : null}
+            {floor.data.monthlyTheme ? `This month · ${floor.data.monthlyTheme}` : null}
+          </p>
+        ) : null}
         {children}
         <nav className="nav-dock nav-safe fixed bottom-0 z-30 flex w-full max-w-[640px] items-end justify-around px-1 pt-1 lg:max-w-[1080px]" aria-label="Primary">
           {NAV.map((item) => {

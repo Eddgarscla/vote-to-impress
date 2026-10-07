@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql, type Sql } from "@/lib/db";
-import { isFounderEmail } from "@/lib/vti/founder";
+import { FOUNDER_EMAIL, isFounderEmail } from "@/lib/vti/founder";
 import type { ChallengePhase, FounderDesk } from "@/lib/vti/types";
 
 function asNum(v: unknown): number {
@@ -14,6 +14,18 @@ function asBool(v: unknown): boolean {
   if (typeof v === "boolean") return v;
   if (typeof v === "string") return v === "t" || v === "true" || v === "1";
   return false;
+}
+
+function toIso(v: unknown): string {
+  if (v instanceof Date) return v.toISOString();
+  const d = new Date(String(v ?? ""));
+  return Number.isNaN(d.getTime()) ? String(v ?? "") : d.toISOString();
+}
+
+function parseWhen(value: string): Date {
+  const v = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return new Date(`${v}:00.000Z`);
+  return new Date(v);
 }
 
 async function requireFounder(sql: Sql, userId: string) {
@@ -33,6 +45,18 @@ export const getFounderDesk = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }): Promise<FounderDesk | { error: string }> => {
     const sql = await getSql();
+    await sql`
+      update profiles
+      set role = 'member'
+      where role = 'founder'
+        and (
+          is_demo = true
+          or is_test = true
+          or user_id not in (
+            select "id" from "user" where lower("email") = ${FOUNDER_EMAIL}
+          )
+        )
+    `;
     const allowed = await requireFounder(sql, context.userId);
     if (!allowed.ok) return { error: allowed.error };
     const stats = await sql<{ users: number; posts: number; votes: number; pending: number }>`
@@ -51,7 +75,7 @@ export const getFounderDesk = createServerFn({ method: "GET" })
     const challenges = await sql<Record<string, unknown>>`
       select c.id, c.title, c.description, c.theme, c.kind, c.active, c.cancelled, c.results_published,
         c.start_date::text as start_date, c.end_date::text as end_date,
-        c.points_first, c.points_second, c.points_third,
+        c.points_first, c.points_second, c.points_third, c.participation_points, c.vote_budget,
         case
           when coalesce(c.cancelled, false) then 'ended'
           when coalesce(c.active, true) = false then 'paused'
@@ -78,6 +102,7 @@ export const getFounderDesk = createServerFn({ method: "GET" })
     const requests = await sql<Record<string, unknown>>`
       select r.id, r.user_id, r.message, r.status, pr.username, pr.impress_points,
         (pr.follower_base + (select count(*)::int from follows f where f.following_id = pr.user_id)) as followers,
+        (pr.following_base + (select count(*)::int from follows f where f.follower_id = pr.user_id)) as following_count,
         (select count(*)::int from challenge_submissions s where s.user_id = pr.user_id) as entries,
         coalesce((select label from level_thresholds t where t.min_points <= pr.impress_points order by t.min_points desc limit 1), 'New Face') as level_label
       from verification_requests r
@@ -100,6 +125,37 @@ export const getFounderDesk = createServerFn({ method: "GET" })
       list.push({ username: row.username, votes: asNum(row.votes) });
       byChallenge.set(row.challenge_id, list);
     }
+    const submissions = await sql<Record<string, unknown>>`
+      select s.challenge_id, pr.username, p.image_url,
+        (select count(*)::int from votes v where v.submission_id = s.id) as votes,
+        r.place, r.points
+      from challenge_submissions s
+      join posts p on p.id = s.post_id
+      join profiles pr on pr.user_id = s.user_id
+      left join challenge_results r on r.challenge_id = s.challenge_id and r.user_id = s.user_id
+      where pr.is_demo = false
+      order by s.challenge_id, coalesce(r.place, 999), votes desc, s.created_at asc
+    `;
+    const voterRows = await sql<{ challenge_id: string; voters: number }>`
+      select s.challenge_id, count(distinct v.voter_id)::int as voters
+      from challenge_submissions s
+      join votes v on v.submission_id = s.id
+      group by s.challenge_id
+    `;
+    const subsByChallenge = new Map<string, { username: string; imageUrl: string; votes: number; place: number | null; points: number | null }[]>();
+    for (const row of submissions) {
+      const id = String(row.challenge_id);
+      const list = subsByChallenge.get(id) ?? [];
+      list.push({
+        username: String(row.username),
+        imageUrl: String(row.image_url),
+        votes: asNum(row.votes),
+        place: row.place == null ? null : asNum(row.place),
+        points: row.points == null ? null : asNum(row.points),
+      });
+      subsByChallenge.set(id, list);
+    }
+    const votersByChallenge = new Map(voterRows.map((row) => [row.challenge_id, asNum(row.voters)]));
     return {
       stats: {
         users: asNum(stats[0]?.users),
@@ -120,15 +176,20 @@ export const getFounderDesk = createServerFn({ method: "GET" })
         phase: String(row.phase) as ChallengePhase,
         active: asBool(row.active),
         cancelled: asBool(row.cancelled),
-        startDate: String(row.start_date),
-        endDate: String(row.end_date),
+        startDate: toIso(row.start_date),
+        endDate: toIso(row.end_date),
         participants: asNum(row.participants),
         votes: asNum(row.votes),
         pointsFirst: asNum(row.points_first),
         pointsSecond: asNum(row.points_second),
         pointsThird: asNum(row.points_third),
+        participationPoints: asNum(row.participation_points) || 25,
+        voteBudget: asNum(row.vote_budget) || 10,
         resultsPublic: asBool(row.results_published),
         ranking: byChallenge.get(String(row.id)) ?? [],
+        voters: votersByChallenge.get(String(row.id)) ?? 0,
+        submissions: subsByChallenge.get(String(row.id)) ?? [],
+        winner: (byChallenge.get(String(row.id)) ?? [])[0]?.username ?? null,
       })),
       requests: requests.map((row) => ({
         id: String(row.id),
@@ -137,6 +198,7 @@ export const getFounderDesk = createServerFn({ method: "GET" })
         message: String(row.message ?? ""),
         status: String(row.status),
         followers: asNum(row.followers),
+        following: asNum(row.following_count),
         impressPoints: asNum(row.impress_points),
         levelLabel: String(row.level_label),
         entries: asNum(row.entries),
@@ -149,8 +211,14 @@ export const getFounderDesk = createServerFn({ method: "GET" })
         levelLabel: String(row.level_label),
         verified: asBool(row.verified),
         isTest: asBool(row.is_test),
-        role: String(row.role) === "founder" ? "founder" as const : "member" as const,
+        role: String(row.role) === "founder" && isFounderEmail(row.email ? String(row.email) : null) && !asBool(row.is_test) ? "founder" as const : "member" as const,
       })),
+      testAccounts: [
+        { username: "miraquill", email: "miraquill@test.votetoimpress.app", password: "RunwayTest1" },
+        { username: "juniperlane", email: "juniperlane@test.votetoimpress.app", password: "RunwayTest1" },
+        { username: "cassvelvet", email: "cassvelvet@test.votetoimpress.app", password: "RunwayTest1" },
+        { username: "orioframe", email: "orioframe@test.votetoimpress.app", password: "RunwayTest1" },
+      ],
     };
   });
 
@@ -165,6 +233,8 @@ const challengeInput = z.object({
   pointsFirst: z.number().int().min(0).max(10000),
   pointsSecond: z.number().int().min(0).max(10000),
   pointsThird: z.number().int().min(0).max(10000),
+  participationPoints: z.number().int().min(0).max(10000).optional(),
+  voteBudget: z.number().int().min(1).max(50).optional(),
 });
 
 export const saveFounderChallenge = createServerFn({ method: "POST" })
@@ -174,11 +244,13 @@ export const saveFounderChallenge = createServerFn({ method: "POST" })
     const sql = await getSql();
     const allowed = await requireFounder(sql, context.userId);
     if (!allowed.ok) return allowed;
-    const start = new Date(data.startsAt);
-    const end = new Date(data.endsAt);
+    const start = parseWhen(data.startsAt);
+    const end = parseWhen(data.endsAt);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
       return { ok: false as const, error: "The end has to be after the start." };
     }
+    const participation = data.participationPoints ?? 25;
+    const budget = data.voteBudget ?? 10;
     const themeRow = await sql<{ theme_key: string }>`select theme_key from platform_settings where id = 'current'`;
     const image = themeRow[0]?.theme_key === "haunted" ? "/media/brand/haunted.jpg" : "/media/brand/lineup.jpg";
     if (data.id) {
@@ -194,7 +266,9 @@ export const saveFounderChallenge = createServerFn({ method: "POST" })
           voting_close = ${end.toISOString()},
           points_first = ${data.pointsFirst},
           points_second = ${data.pointsSecond},
-          points_third = ${data.pointsThird}
+          points_third = ${data.pointsThird},
+          participation_points = ${participation},
+          vote_budget = ${budget}
         where id = ${data.id} and is_demo = false and results_published = false
         returning id
       `;
@@ -215,7 +289,7 @@ export const saveFounderChallenge = createServerFn({ method: "POST" })
         ${id}, ${data.title.trim()}, ${data.description.trim()}, ${image}, ${data.theme.trim() || data.kind},
         ${start.toISOString()}, ${end.toISOString()},
         ${data.pointsFirst}, ${data.pointsSecond}, ${data.pointsThird}, false, ${season[0]?.id ?? ""},
-        ${end.toISOString()}, ${end.toISOString()}, 10, 25, 5, false, ${data.kind}, true, false
+        ${end.toISOString()}, ${end.toISOString()}, ${budget}, ${participation}, 5, false, ${data.kind}, true, false
       )
     `;
     return { ok: true as const, id };

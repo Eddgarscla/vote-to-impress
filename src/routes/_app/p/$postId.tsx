@@ -111,6 +111,31 @@ function PostPage() {
                   }}
                 >
                   <TextArea value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={300} rows={3} />
+                  {data.post.images.length > 1 ? (
+                    <ul className="flex gap-2 overflow-x-auto">
+                      {data.post.images.map((src, index) => (
+                        <li key={src.slice(-24) + index} className="w-20 shrink-0">
+                          <img src={src} alt="" className="aspect-[3/4] w-full rounded-lg object-cover" />
+                          <button
+                            type="button"
+                            className="mt-1 text-xs text-accent underline"
+                            onClick={() => {
+                              void updatePost({ data: { postId, caption, removePositions: [index] } }).then((res) => {
+                                if (!res.ok) {
+                                  setError(res.error);
+                                  return;
+                                }
+                                const images = res.images ?? data.post.images.filter((_, i) => i !== index);
+                                query.setData({ ...data, post: { ...data.post, caption: caption.trim(), images, imageUrl: images[0] ?? data.post.imageUrl } });
+                              });
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   <Button type="submit">Save caption</Button>
                 </form>
               ) : (

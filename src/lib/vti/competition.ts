@@ -1,15 +1,20 @@
 import type { Sql } from "@/lib/db";
-import { levelKeySql } from "@/lib/vti/levels";
 
 function asNum(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
-const LEVEL_SQL = levelKeySql("impress_points");
-
 async function syncLevel(sql: Sql, userId: string) {
-  await sql.query(`update profiles set level_key = ${LEVEL_SQL} where user_id = $1`, [userId]);
+  await sql.query(
+    `update profiles set level_key = coalesce((
+      select level_key from level_thresholds t
+      where t.min_points <= profiles.impress_points
+      order by t.min_points desc
+      limit 1
+    ), 'new_face') where user_id = $1`,
+    [userId],
+  );
 }
 
 async function finalizeChallenge(sql: Sql, challengeId: string) {

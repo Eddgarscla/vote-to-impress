@@ -8,7 +8,7 @@ import { isLikelyImage } from "@/lib/vti/image";
 import { createPost, listChallenges } from "@/lib/vti/server";
 import { useQuery } from "@/lib/vti/use-query";
 
-const MAX_PHOTOS = 16;
+const MAX_PHOTOS = 24;
 
 export const Route = createFileRoute("/_app/create")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -36,7 +36,7 @@ function CreatePage() {
     if (!list?.length) return;
     const room = MAX_PHOTOS - shots.length - queue.length;
     if (room <= 0) {
-      setError(`This post already has ${MAX_PHOTOS} photos, which is the storage ceiling.`);
+      setError(`This post can hold ${MAX_PHOTOS} photos. That is the storage ceiling for one look, not a small gallery limit.`);
       return;
     }
     const next: string[] = [];
@@ -107,7 +107,7 @@ function CreatePage() {
               ))}
             </ul>
           ) : null}
-          <p className="text-xs text-muted">{shots.length + (current ? 1 : 0)} photo{shots.length + (current ? 1 : 0) === 1 ? "" : "s"} in this post. Up to {MAX_PHOTOS}.</p>
+          <p className="text-xs text-muted">{shots.length + (current ? 1 : 0)} photo{shots.length + (current ? 1 : 0) === 1 ? "" : "s"} in this post.</p>
           {current ? (
             <div className="flex flex-wrap gap-3">
               <Button type="button" variant="line" onClick={() => void keepCurrent()}>Add this photo</Button>

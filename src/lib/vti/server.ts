@@ -125,22 +125,21 @@ async function awardIfDue(sql: Sql) {
   await finalizeCompetitions(sql);
 }
 
-async function syncFounderRole(sql: Sql, userId: string) {
+export async function syncFounderRole(sql: Sql, userId: string) {
   await sql`
     update profiles
     set role = 'member'
     where role = 'founder'
-      and is_demo = false
-      and is_test = false
-      and user_id not in (
-        select "id" from "user" where lower("email") = ${FOUNDER_EMAIL}
+      and (
+        is_demo = true
+        or is_test = true
+        or user_id not in (
+          select "id" from "user" where lower("email") = ${FOUNDER_EMAIL}
+        )
       )
   `;
   const auth = await sql<{ email: string }>`select "email" as email from "user" where "id" = ${userId}`;
-  if (!isFounderEmail(auth[0]?.email)) {
-    await sql`update profiles set role = 'member' where user_id = ${userId} and role = 'founder'`;
-    return;
-  }
+  if (!isFounderEmail(auth[0]?.email)) return;
   await sql`
     update profiles
     set role = 'founder', verified = true
@@ -269,6 +268,7 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
   const row = rows[0];
   if (!row) return null;
   const id = String(row.user_id);
+  const isSelf = id === me;
   const posts = await sql<{ id: string; image_url: string }>`
     select id, image_url from posts where user_id = ${id} order by created_at desc
   `;
@@ -282,12 +282,6 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     order by c.end_date desc
     limit 6
   `;
-  let email: string | null = null;
-  const isSelf = id === me;
-  if (isSelf) {
-    const auth = await sql<{ email: string }>`select "email" as email from "user" where "id" = ${me}`;
-    email = auth[0]?.email ?? null;
-  }
   const mapped: Placement[] = placements.map((p) => ({
     challengeId: p.challenge_id,
     challengeTitle: p.title,
@@ -295,13 +289,17 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     points: asNum(p.points),
   }));
   const level = await ladderFor(sql, asNum(row.impress_points));
-  const role = String(row.role) === "founder" && !asBool(row.is_test) ? "founder" : "member";
+  const auth = await sql<{ email: string }>`select "email" as email from "user" where "id" = ${id}`;
+  const authEmail = auth[0]?.email ?? null;
+  const founder = String(row.role) === "founder" && !asBool(row.is_test) && isFounderEmail(authEmail);
+  const showPersonal = asBool(row.show_personal);
+  const share = isSelf || showPersonal;
   return {
     id,
     username: String(row.username),
     bio: String(row.bio ?? ""),
     avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
-    email,
+    email: isSelf ? authEmail : null,
     isSelf,
     followedByMe: asBool(row.followed_by_me),
     followers: asNum(row.followers),
@@ -310,23 +308,23 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     impressPoints: asNum(row.impress_points),
     challengeWins: asNum(row.challenge_wins),
     topPlacements: asNum(row.top_placements),
-    role,
-    verified: role === "founder" || asBool(row.verified),
+    role: founder ? "founder" : "member",
+    verified: founder || asBool(row.verified),
     isTest: asBool(row.is_test),
     levelKey: level.key,
     levelLabel: level.label,
     nextAt: level.nextAt,
     nextLabel: level.nextLabel,
     displayName: String(row.display_name ?? ""),
-    pronouns: String(row.pronouns ?? ""),
-    location: String(row.location ?? ""),
-    website: String(row.website ?? ""),
-    instagram: String(row.instagram ?? ""),
-    tiktok: String(row.tiktok ?? ""),
-    xHandle: String(row.x_handle ?? ""),
-    robloxUsername: String(row.roblox_username ?? ""),
-    robloxUrl: String(row.roblox_url ?? ""),
-    showPersonal: asBool(row.show_personal),
+    pronouns: share ? String(row.pronouns ?? "") : "",
+    location: share ? String(row.location ?? "") : "",
+    website: share ? String(row.website ?? "") : "",
+    instagram: share ? String(row.instagram ?? "") : "",
+    tiktok: share ? String(row.tiktok ?? "") : "",
+    xHandle: share ? String(row.x_handle ?? "") : "",
+    robloxUsername: share ? String(row.roblox_username ?? "") : "",
+    robloxUrl: share ? String(row.roblox_url ?? "") : "",
+    showPersonal,
     posts: posts.map((p) => ({ id: p.id, imageUrl: p.image_url })),
     placements: mapped,
   };
@@ -574,6 +572,9 @@ export const getFloor = createServerFn({ method: "GET" })
       select theme_key from platform_settings where id = 'current'
     `;
     const themeKey = settings[0]?.theme_key || (season && !season.published && season.themeKey ? season.themeKey : "gloss");
+    const themes = await sql<{ weekly_theme: string; monthly_theme: string }>`
+      select weekly_theme, monthly_theme from platform_settings where id = 'current'
+    `;
     await syncFounderRole(sql, context.userId);
     const roleRow = await sql<{ role: string; email: string }>`
       select p.role, u."email" as email
@@ -584,6 +585,8 @@ export const getFloor = createServerFn({ method: "GET" })
     const founder = roleRow[0]?.role === "founder" && isFounderEmail(roleRow[0]?.email);
     return {
       themeKey,
+      weeklyTheme: themes[0]?.weekly_theme ?? "",
+      monthlyTheme: themes[0]?.monthly_theme ?? "",
       seasonTitle: season?.title ?? "",
       role: founder ? ("founder" as const) : ("member" as const),
     };
@@ -753,14 +756,14 @@ export const createPost = createServerFn({ method: "POST" })
   .validator((input: unknown) =>
     z.object({
       imageDataUrl: z.string().min(32).max(1_200_000).optional(),
-      imageDataUrls: z.array(z.string().min(32).max(1_200_000)).min(1).max(16).optional(),
+      imageDataUrls: z.array(z.string().min(32).max(1_200_000)).min(1).max(24).optional(),
       caption: z.string().max(300),
       challengeId: z.string().max(80).nullable().optional(),
     }).parse(input),
   )
   .middleware([authMiddleware])
   .handler(async ({ context, data }) => {
-    const images = (data.imageDataUrls?.length ? data.imageDataUrls : data.imageDataUrl ? [data.imageDataUrl] : []).slice(0, 16);
+    const images = (data.imageDataUrls?.length ? data.imageDataUrls : data.imageDataUrl ? [data.imageDataUrl] : []).slice(0, 24);
     if (!images.length) return { ok: false as const, error: "Add at least one photo." };
     for (const image of images) {
       const bad = assertImage(image, 1_200_000);
@@ -1078,17 +1081,24 @@ export const updatePost = createServerFn({ method: "POST" })
     const sql = await getSql();
     const mine = await sql`select id from posts where id = ${data.postId} and user_id = ${context.userId}`;
     if (!mine.length) return { ok: false as const, error: "You can only edit your own look." };
-    await sql`update posts set caption = ${data.caption.trim()} where id = ${data.postId}`;
-    for (const position of data.removePositions ?? []) {
-      const left = await sql<{ n: number }>`select count(*)::int as n from post_images where post_id = ${data.postId}`;
-      if (asNum(left[0]?.n) <= 1) return { ok: false as const, error: "A look needs at least one photo." };
-      await sql`delete from post_images where post_id = ${data.postId} and position = ${position}`;
-    }
-    const first = await sql<{ image_url: string }>`
-      select image_url from post_images where post_id = ${data.postId} order by position asc limit 1
+    const rows = await sql<{ image_url: string }>`
+      select image_url from post_images where post_id = ${data.postId} order by position asc
     `;
-    if (first[0]) await sql`update posts set image_url = ${first[0].image_url} where id = ${data.postId}`;
-    return { ok: true as const };
+    const gallery = rows.length
+      ? rows
+      : await sql<{ image_url: string }>`select image_url from posts where id = ${data.postId}`;
+    const remove = new Set(data.removePositions ?? []);
+    const kept = gallery.filter((_, index) => !remove.has(index)).map((row) => row.image_url);
+    if (!kept.length) return { ok: false as const, error: "A look needs at least one photo." };
+    await sql`update posts set caption = ${data.caption.trim()}, image_url = ${kept[0]} where id = ${data.postId}`;
+    await sql`delete from post_images where post_id = ${data.postId}`;
+    for (let i = 0; i < kept.length; i += 1) {
+      await sql`
+        insert into post_images (post_id, position, image_url)
+        values (${data.postId}, ${i}, ${kept[i]})
+      `;
+    }
+    return { ok: true as const, images: kept };
   });
 
 export const deletePost = createServerFn({ method: "POST" })

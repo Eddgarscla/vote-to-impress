@@ -42,7 +42,7 @@ export function ProfileView({ username }: { username?: string }) {
 
   return (
     <div className="pb-nav">
-      <header className="px-5 pt-6">
+      <header className="profile-head px-5 pt-6">
         <div className="flex items-center gap-4">
           <Avatar src={profile.avatarUrl} name={profile.username} size="xl" />
           <div className="min-w-0 flex-1">
@@ -62,7 +62,7 @@ export function ProfileView({ username }: { username?: string }) {
               </p>
             </div>
             {profile.bio ? <p className="mt-2 text-sm text-ink">{profile.bio}</p> : <p className="mt-2 text-sm text-muted">No bio yet.</p>}
-            {profile.showPersonal ? <ProfileFacts profile={profile} /> : null}
+            {profile.isSelf || profile.showPersonal ? <ProfileFacts profile={profile} /> : null}
           </div>
         </div>
         <dl className="mt-5 grid grid-cols-3 gap-2 text-center">
@@ -197,6 +197,7 @@ function Editor({ profile, onSaved }: { profile: ProfilePayload; onSaved: (next:
   const [xHandle, setXHandle] = useState(profile.xHandle);
   const [robloxUsername, setRobloxUsername] = useState(profile.robloxUsername);
   const [robloxUrl, setRobloxUrl] = useState(profile.robloxUrl);
+  const [showPersonal, setShowPersonal] = useState(profile.showPersonal);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -216,7 +217,7 @@ function Editor({ profile, onSaved }: { profile: ProfilePayload; onSaved: (next:
     const res = await updateProfile({
       data: {
         username, displayName, bio, pronouns, location, website, instagram, tiktok, xHandle, robloxUsername, robloxUrl,
-        showPersonal: true,
+        showPersonal,
         avatarDataUrl: avatar,
       },
     });
@@ -231,6 +232,7 @@ function Editor({ profile, onSaved }: { profile: ProfilePayload; onSaved: (next:
       displayName: displayName.trim(),
       bio: bio.trim(),
       pronouns, location, website, instagram, tiktok, xHandle, robloxUsername, robloxUrl,
+      showPersonal,
       avatarUrl: avatar ?? profile.avatarUrl,
     });
     setOpen(false);
@@ -259,6 +261,10 @@ function Editor({ profile, onSaved }: { profile: ProfilePayload; onSaved: (next:
         <TextInput value={robloxUsername} onChange={(e) => setRobloxUsername(e.target.value)} maxLength={40} />
       </Field>
       <Field label="Roblox profile link"><TextInput value={robloxUrl} onChange={(e) => setRobloxUrl(e.target.value)} maxLength={200} /></Field>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={showPersonal} onChange={(e) => setShowPersonal(e.target.checked)} />
+        Show pronouns, location, and social links on my profile
+      </label>
       <Field label="Profile photo">
         {cropSrc ? (
           <AvatarCropper
