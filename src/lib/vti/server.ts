@@ -2,7 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql, type Sql } from "@/lib/db";
+import { finalizeCompetitions } from "@/lib/vti/competition";
+import { levelFor } from "@/lib/vti/levels";
 import type {
+  ChallengeBoard,
   ChallengeDetail,
   ChallengeSummary,
   CommentItem,
@@ -12,6 +15,7 @@ import type {
   PostCard,
   ProfilePayload,
   RankedLook,
+  SeasonCard,
 } from "@/lib/vti/types";
 
 function asNum(v: unknown): number {
@@ -76,47 +80,20 @@ function mapPost(r: PostRow): PostCard {
 }
 
 async function awardIfDue(sql: Sql) {
-  const due = await sql<{ id: string }>`
-    select c.id
-    from challenges c
-    where c.end_date <= now()
-      and not exists (select 1 from challenge_results r where r.challenge_id = c.id)
+  await finalizeCompetitions(sql);
+}
+
+async function grantFounderIfFirst(sql: Sql, userId: string) {
+  await sql`
+    update profiles
+    set role = 'founder'
+    where user_id = ${userId}
+      and is_demo = false
+      and not exists (
+        select 1 from profiles founder
+        where founder.role = 'founder' and founder.user_id <> ${userId}
+      )
   `;
-  for (const row of due) {
-    const meta = await sql<{ points_first: number; points_second: number; points_third: number }>`
-      select points_first, points_second, points_third from challenges where id = ${row.id}
-    `;
-    const points = meta[0];
-    if (!points) continue;
-    const ranked = await sql<{ user_id: string }>`
-      select s.user_id
-      from challenge_submissions s
-      left join votes v on v.submission_id = s.id
-      where s.challenge_id = ${row.id}
-      group by s.user_id, s.created_at
-      order by count(v.voter_id) desc, s.created_at asc
-    `;
-    let place = 0;
-    for (const entry of ranked) {
-      place += 1;
-      const award =
-        place === 1 ? asNum(points.points_first) : place === 2 ? asNum(points.points_second) : place === 3 ? asNum(points.points_third) : 0;
-      const inserted = await sql<{ user_id: string }>`
-        insert into challenge_results (challenge_id, user_id, place, points)
-        values (${row.id}, ${entry.user_id}, ${place}, ${award})
-        on conflict (challenge_id, user_id) do nothing
-        returning user_id
-      `;
-      if (!inserted.length) continue;
-      await sql`
-        update profiles
-        set impress_points = impress_points + ${award},
-            challenge_wins = challenge_wins + ${place === 1 ? 1 : 0},
-            top_placements = top_placements + ${place <= 3 ? 1 : 0}
-        where user_id = ${entry.user_id}
-      `;
-    }
-  }
 }
 
 export const ensureProfile = createServerFn({ method: "POST" })
@@ -137,6 +114,7 @@ export const ensureProfile = createServerFn({ method: "POST" })
       if (data.avatarDataUrl && !existing[0].avatar_url) {
         await sql`update profiles set avatar_url = ${data.avatarDataUrl} where user_id = ${context.userId}`;
       }
+      await grantFounderIfFirst(sql, context.userId);
       return { ok: true as const, username: existing[0].username };
     }
     const auth = await sql<{ name: string; email: string }>`
@@ -153,6 +131,7 @@ export const ensureProfile = createServerFn({ method: "POST" })
       insert into profiles (user_id, username, bio, avatar_url)
       values (${context.userId}, ${username}, '', ${data.avatarDataUrl ?? null})
     `;
+    await grantFounderIfFirst(sql, context.userId);
     return { ok: true as const, username };
   });
 
@@ -195,6 +174,7 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
   const rows = username
     ? await sql<Record<string, unknown>>`
         select p.user_id, p.username, p.bio, p.avatar_url, p.impress_points, p.challenge_wins, p.top_placements,
+          p.role, p.level_key,
           (p.follower_base + (select count(*)::int from follows f where f.following_id = p.user_id)) as followers,
           (p.following_base + (select count(*)::int from follows f where f.follower_id = p.user_id)) as following_count,
           (select count(*)::int from posts po where po.user_id = p.user_id) as post_count,
@@ -204,6 +184,7 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
       `
     : await sql<Record<string, unknown>>`
         select p.user_id, p.username, p.bio, p.avatar_url, p.impress_points, p.challenge_wins, p.top_placements,
+          p.role, p.level_key,
           (p.follower_base + (select count(*)::int from follows f where f.following_id = p.user_id)) as followers,
           (p.following_base + (select count(*)::int from follows f where f.follower_id = p.user_id)) as following_count,
           (select count(*)::int from posts po where po.user_id = p.user_id) as post_count,
@@ -222,6 +203,8 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     from challenge_results r
     join challenges c on c.id = r.challenge_id
     where r.user_id = ${id}
+      and c.is_demo = false
+      and c.results_published = true
     order by c.end_date desc
     limit 6
   `;
@@ -237,6 +220,8 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     place: asNum(p.place),
     points: asNum(p.points),
   }));
+  const level = levelFor(asNum(row.impress_points));
+  const role = String(row.role) === "founder" ? "founder" : "member";
   return {
     id,
     username: String(row.username),
@@ -251,6 +236,9 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     impressPoints: asNum(row.impress_points),
     challengeWins: asNum(row.challenge_wins),
     topPlacements: asNum(row.top_placements),
+    role,
+    levelKey: level.key,
+    levelLabel: level.label,
     posts: posts.map((p) => ({ id: p.id, imageUrl: p.image_url })),
     placements: mapped,
   };
@@ -282,8 +270,9 @@ export const getFeed = createServerFn({ method: "POST" })
           from posts p
           join profiles pr on pr.user_id = p.user_id
           left join challenges c on c.id = p.challenge_id
-          where p.user_id = ${me}
-             or p.user_id in (select following_id from follows where follower_id = ${me})
+          where (p.user_id = ${me}
+             or p.user_id in (select following_id from follows where follower_id = ${me}))
+            and p.is_demo = false
           order by p.created_at desc
           limit 40
         `
@@ -298,6 +287,7 @@ export const getFeed = createServerFn({ method: "POST" })
           from posts p
           join profiles pr on pr.user_id = p.user_id
           left join challenges c on c.id = p.challenge_id
+          where p.is_demo = false
           order by (
             (select count(*) from likes l where l.post_id = p.id) * 2
             + (select count(*) from comments cm where cm.post_id = p.id)
@@ -422,6 +412,7 @@ export const toggleFollow = createServerFn({ method: "POST" })
   });
 
 function mapChallenge(row: Record<string, unknown>): ChallengeSummary {
+  const phase = String(row.phase ?? "open") as ChallengeSummary["phase"];
   return {
     id: String(row.id),
     title: String(row.title),
@@ -430,35 +421,105 @@ function mapChallenge(row: Record<string, unknown>): ChallengeSummary {
     theme: String(row.theme ?? ""),
     startDate: toIso(row.start_date),
     endDate: toIso(row.end_date),
-    phase: asBool(row.ended) ? "ended" : "active",
+    submissionsClose: toIso(row.submissions_close ?? row.end_date),
+    votingClose: toIso(row.voting_close ?? row.end_date),
+    phase,
     participants: asNum(row.participants),
     pointsFirst: asNum(row.points_first),
     pointsSecond: asNum(row.points_second),
     pointsThird: asNum(row.points_third),
+    voteBudget: asNum(row.vote_budget) || 10,
+    isDemo: asBool(row.is_demo),
+    seasonId: String(row.season_id ?? ""),
   };
 }
 
+async function loadSeason(sql: Sql): Promise<SeasonCard | null> {
+  const rows = await sql<Record<string, unknown>>`
+    select id, title, tagline, theme_key, starts_at::text as starts_at, ends_at::text as ends_at, results_published
+    from seasons
+    order by (starts_at <= now() and ends_at > now()) desc, starts_at desc
+    limit 1
+  `;
+  const season = rows[0];
+  if (!season) return null;
+  const published = asBool(season.results_published);
+  const podium = published
+    ? await sql<Record<string, unknown>>`
+        select r.place, r.points, r.weekly_wins, pr.username, pr.avatar_url
+        from season_results r
+        join profiles pr on pr.user_id = r.user_id
+        where r.season_id = ${String(season.id)} and r.place <= 3
+        order by r.place asc
+      `
+    : [];
+  return {
+    id: String(season.id),
+    title: String(season.title),
+    tagline: String(season.tagline ?? ""),
+    themeKey: String(season.theme_key ?? "gloss"),
+    startsAt: toIso(season.starts_at),
+    endsAt: toIso(season.ends_at),
+    published,
+    podium: podium.map((row) => ({
+      place: asNum(row.place),
+      username: String(row.username),
+      avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
+      points: asNum(row.points),
+      weeklyWins: asNum(row.weekly_wins),
+    })),
+  };
+}
+
+export const getFloor = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    await awardIfDue(sql);
+    const season = await loadSeason(sql);
+    const roleRow = await sql<{ role: string }>`select role from profiles where user_id = ${context.userId}`;
+    return {
+      themeKey: season && !season.published && season.themeKey ? season.themeKey : "gloss",
+      seasonTitle: season?.title ?? "",
+      role: roleRow[0]?.role === "founder" ? ("founder" as const) : ("member" as const),
+    };
+  });
+
 export const listChallenges = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .handler(async () => {
+  .handler(async ({ context }): Promise<ChallengeBoard> => {
     const sql = await getSql();
     await awardIfDue(sql);
     const rows = await sql<Record<string, unknown>>`
       select c.id, c.title, c.description, c.image_url, c.theme,
         c.start_date::text as start_date, c.end_date::text as end_date,
-        (c.end_date <= now()) as ended,
-        c.points_first, c.points_second, c.points_third,
+        c.submissions_close::text as submissions_close, c.voting_close::text as voting_close,
+        c.points_first, c.points_second, c.points_third, c.vote_budget, c.is_demo, c.season_id,
         (select count(*)::int from challenge_submissions s where s.challenge_id = c.id) as participants
       from challenges c
-      order by (c.end_date <= now()) asc, c.end_date asc
+      where c.is_demo = false
+      order by (coalesce(c.voting_close, c.end_date) <= now()) asc, c.end_date asc
     `;
-    return rows.map(mapChallenge);
+    const phased = await sql<Record<string, unknown>>`
+      select c.id,
+        case
+          when c.is_demo then 'ended'
+          when now() < c.start_date then 'upcoming'
+          when now() >= coalesce(c.voting_close, c.end_date) then 'ended'
+          when now() >= coalesce(c.submissions_close, c.end_date) then 'voting'
+          else 'open'
+        end as phase
+      from challenges c
+      where c.is_demo = false
+    `;
+    const phaseById = new Map(phased.map((row) => [String(row.id), String(row.phase)]));
+    const roleRow = await sql<{ role: string }>`select role from profiles where user_id = ${context.userId}`;
+    return {
+      season: await loadSeason(sql),
+      challenges: rows.map((row) => mapChallenge({ ...row, phase: phaseById.get(String(row.id)) ?? "open" })),
+      role: roleRow[0]?.role === "founder" ? "founder" : "member",
+    };
   });
-
-function pointsLabel(place: number, ended: boolean, points: number): string {
-  if (place > 3 || points <= 0) return "";
-  return ended ? `${points} pts` : `${points} pts if it holds`;
-}
 
 export const getChallenge = createServerFn({ method: "POST" })
   .validator((input: unknown) => z.object({ id: z.string().min(1).max(80) }).parse(input))
@@ -470,14 +531,25 @@ export const getChallenge = createServerFn({ method: "POST" })
     const rows = await sql<Record<string, unknown>>`
       select c.id, c.title, c.description, c.image_url, c.theme,
         c.start_date::text as start_date, c.end_date::text as end_date,
-        (c.end_date <= now()) as ended,
-        c.points_first, c.points_second, c.points_third,
-        (select count(*)::int from challenge_submissions s where s.challenge_id = c.id) as participants
+        c.submissions_close::text as submissions_close, c.voting_close::text as voting_close,
+        c.points_first, c.points_second, c.points_third, c.vote_budget, c.is_demo, c.season_id,
+        c.results_published,
+        case
+          when c.is_demo then 'ended'
+          when now() < c.start_date then 'upcoming'
+          when now() >= coalesce(c.voting_close, c.end_date) then 'ended'
+          when now() >= coalesce(c.submissions_close, c.end_date) then 'voting'
+          else 'open'
+        end as phase,
+        (select count(*)::int from challenge_submissions s where s.challenge_id = c.id and exists (
+          select 1 from profiles pr where pr.user_id = s.user_id and pr.is_demo = false
+        )) as participants
       from challenges c
       where c.id = ${data.id}
     `;
     if (!rows[0]) return null;
     const summary = mapChallenge(rows[0]);
+    const resultsPublic = summary.phase === "ended" && !summary.isDemo && asBool(rows[0].results_published);
     const subs = await sql<Record<string, unknown>>`
       select s.id, s.post_id, s.user_id, s.created_at::text as created_at,
         pr.username, pr.avatar_url, p.image_url, p.caption,
@@ -488,19 +560,20 @@ export const getChallenge = createServerFn({ method: "POST" })
       join posts p on p.id = s.post_id
       left join votes v on v.submission_id = s.id
       where s.challenge_id = ${data.id}
+        and pr.is_demo = false
       group by s.id, s.post_id, s.user_id, s.created_at, pr.username, pr.avatar_url, p.image_url, p.caption
-      order by count(v.voter_id) desc, s.created_at asc
+      order by s.created_at asc
     `;
-    const awarded = await sql<{ user_id: string; points: number }>`
-      select user_id, points from challenge_results where challenge_id = ${data.id}
-    `;
-    const awardMap = new Map(awarded.map((a) => [a.user_id, asNum(a.points)]));
-    const ended = summary.phase === "ended";
-    const ranking: RankedLook[] = subs.map((s, index) => {
-      const place = index + 1;
-      const projected = place === 1 ? summary.pointsFirst : place === 2 ? summary.pointsSecond : place === 3 ? summary.pointsThird : 0;
+    const awarded = resultsPublic
+      ? await sql<{ user_id: string; points: number; place: number }>`
+          select user_id, points, place from challenge_results where challenge_id = ${data.id}
+        `
+      : [];
+    const awardMap = new Map(awarded.map((a) => [a.user_id, a]));
+    const ranking: RankedLook[] = subs.map((s) => {
       const stored = awardMap.get(String(s.user_id));
-      const points = stored ?? projected;
+      const place = resultsPublic ? asNum(stored?.place) : null;
+      const points = resultsPublic ? asNum(stored?.points) : null;
       return {
         submissionId: String(s.id),
         postId: String(s.post_id),
@@ -509,19 +582,27 @@ export const getChallenge = createServerFn({ method: "POST" })
         avatarUrl: s.avatar_url ? String(s.avatar_url) : null,
         imageUrl: String(s.image_url),
         caption: String(s.caption ?? ""),
-        votes: asNum(s.votes),
+        votes: resultsPublic ? asNum(s.votes) : null,
         votedByMe: asBool(s.voted_by_me),
         place,
         points,
-        pointsLabel: pointsLabel(place, ended, points),
+        pointsLabel: resultsPublic && place && place <= 3 ? `${points} pts` : "",
       };
     });
+    if (resultsPublic) ranking.sort((a, b) => (a.place ?? 99) - (b.place ?? 99));
     const mine = ranking.find((r) => r.userId === me) ?? null;
-    const eligible = mine
+    const usedRow = await sql<{ n: number }>`
+      select count(*)::int as n
+      from votes v
+      join challenge_submissions s on s.id = v.submission_id
+      where v.voter_id = ${me} and s.challenge_id = ${data.id}
+    `;
+    const votesUsed = asNum(usedRow[0]?.n);
+    const eligible = mine || summary.phase !== "open"
       ? []
       : await sql<{ id: string; image_url: string; caption: string }>`
           select id, image_url, caption from posts
-          where user_id = ${me} and challenge_id is null
+          where user_id = ${me} and challenge_id is null and is_demo = false
           order by created_at desc
           limit 12
         `;
@@ -530,15 +611,29 @@ export const getChallenge = createServerFn({ method: "POST" })
       ranking,
       mySubmissionId: mine?.submissionId ?? null,
       eligiblePosts: eligible.map((p) => ({ id: p.id, imageUrl: p.image_url, caption: p.caption })),
+      canSubmit: summary.phase === "open" && !summary.isDemo,
+      canVote: (summary.phase === "open" || summary.phase === "voting") && !summary.isDemo,
+      resultsPublic,
+      votesUsed,
+      votesLeft: Math.max(0, summary.voteBudget - votesUsed),
     };
   });
 
 async function challengeOpen(sql: Sql, challengeId: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  const rows = await sql<{ ended: boolean | string }>`
-    select (end_date <= now()) as ended from challenges where id = ${challengeId}
+  const rows = await sql<{ phase: string; is_demo: boolean | string }>`
+    select c.is_demo,
+      case
+        when c.is_demo then 'ended'
+        when now() < c.start_date then 'upcoming'
+        when now() >= coalesce(c.voting_close, c.end_date) then 'ended'
+        when now() >= coalesce(c.submissions_close, c.end_date) then 'voting'
+        else 'open'
+      end as phase
+    from challenges c where c.id = ${challengeId}
   `;
   if (!rows.length) return { ok: false, error: "That challenge is not here." };
-  if (asBool(rows[0].ended)) return { ok: false, error: "This challenge has closed." };
+  if (asBool(rows[0].is_demo)) return { ok: false, error: "Studio looks are not a live challenge." };
+  if (rows[0].phase !== "open") return { ok: false, error: "Submissions are closed for this challenge." };
   return { ok: true };
 }
 
@@ -615,14 +710,29 @@ export const toggleVote = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const me = context.userId;
-    const sub = await sql<{ user_id: string; challenge_id: string; ended: boolean | string }>`
-      select s.user_id, s.challenge_id, (c.end_date <= now()) as ended
+    const sub = await sql<{
+      user_id: string;
+      challenge_id: string;
+      phase: string;
+      is_demo: boolean | string;
+      vote_budget: number;
+    }>`
+      select s.user_id, s.challenge_id, c.is_demo, c.vote_budget,
+        case
+          when c.is_demo then 'ended'
+          when now() < c.start_date then 'upcoming'
+          when now() >= coalesce(c.voting_close, c.end_date) then 'ended'
+          when now() >= coalesce(c.submissions_close, c.end_date) then 'voting'
+          else 'open'
+        end as phase
       from challenge_submissions s
       join challenges c on c.id = s.challenge_id
       where s.id = ${data.submissionId}
     `;
     if (!sub.length) return { ok: false as const, error: "That entry is not here." };
-    if (asBool(sub[0].ended)) return { ok: false as const, error: "Voting is closed." };
+    if (asBool(sub[0].is_demo) || (sub[0].phase !== "open" && sub[0].phase !== "voting")) {
+      return { ok: false as const, error: "Voting is closed." };
+    }
     if (sub[0].user_id === me) return { ok: false as const, error: "You cannot vote for your own look." };
     const existing = await sql`
       select 1 as one from votes where voter_id = ${me} and submission_id = ${data.submissionId}
@@ -630,12 +740,92 @@ export const toggleVote = createServerFn({ method: "POST" })
     if (existing.length) {
       await sql`delete from votes where voter_id = ${me} and submission_id = ${data.submissionId}`;
     } else {
+      const budget = Math.max(1, asNum(sub[0].vote_budget) || 10);
+      const used = await sql<{ n: number }>`
+        select count(*)::int as n
+        from votes v
+        join challenge_submissions s on s.id = v.submission_id
+        where v.voter_id = ${me} and s.challenge_id = ${sub[0].challenge_id}
+      `;
+      if (asNum(used[0]?.n) >= budget) {
+        return { ok: false as const, error: `You have used all ${budget} competitive votes for this challenge.` };
+      }
       await sql`insert into votes (voter_id, submission_id) values (${me}, ${data.submissionId})`;
     }
-    const count = await sql<{ n: number }>`
-      select count(*)::int as n from votes where submission_id = ${data.submissionId}
+    const left = await sql<{ n: number }>`
+      select count(*)::int as n
+      from votes v
+      join challenge_submissions s on s.id = v.submission_id
+      where v.voter_id = ${me} and s.challenge_id = ${sub[0].challenge_id}
     `;
-    return { ok: true as const, voted: !existing.length, votes: asNum(count[0]?.n) };
+    const votesUsed = asNum(left[0]?.n);
+    const voteBudget = Math.max(1, asNum(sub[0].vote_budget) || 10);
+    return { ok: true as const, voted: !existing.length, votesUsed, votesLeft: Math.max(0, voteBudget - votesUsed) };
+  });
+
+async function requireFounder(sql: Sql, userId: string) {
+  const rows = await sql<{ role: string }>`select role from profiles where user_id = ${userId}`;
+  if (rows[0]?.role !== "founder") return { ok: false as const, error: "Only the Founder can manage competitions." };
+  return { ok: true as const };
+}
+
+export const createWeeklyChallenge = createServerFn({ method: "POST" })
+  .validator((input: unknown) =>
+    z.object({
+      title: z.string().min(3).max(80),
+      description: z.string().min(3).max(400),
+      theme: z.string().max(40),
+      submitDays: z.number().int().min(1).max(21),
+      voteDays: z.number().int().min(1).max(14),
+    }).parse(input),
+  )
+  .middleware([authMiddleware])
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const allowed = await requireFounder(sql, context.userId);
+    if (!allowed.ok) return allowed;
+    const season = await sql<{ id: string; theme_key: string }>`
+      select id, theme_key from seasons
+      where starts_at <= now() and ends_at > now()
+      order by starts_at desc
+      limit 1
+    `;
+    const id = `ch_${crypto.randomUUID()}`;
+    const themeKey = season[0]?.theme_key ?? "gloss";
+    const image = themeKey === "haunted" ? "/media/brand/haunted.jpg" : "/media/brand/lineup.jpg";
+    await sql`
+      insert into challenges (
+        id, title, description, image_url, theme, start_date, end_date,
+        points_first, points_second, points_third, is_demo, season_id,
+        submissions_close, voting_close, vote_budget, participation_points, vote_points, results_published
+      ) values (
+        ${id}, ${data.title.trim()}, ${data.description.trim()}, ${image}, ${data.theme.trim() || "Weekly"},
+        now(), now() + (${data.submitDays} + ${data.voteDays}) * interval '1 day',
+        400, 180, 90, false, ${season[0]?.id ?? ""},
+        now() + ${data.submitDays} * interval '1 day',
+        now() + (${data.submitDays} + ${data.voteDays}) * interval '1 day',
+        10, 25, 5, false
+      )
+    `;
+    return { ok: true as const, id };
+  });
+
+export const closeChallenge = createServerFn({ method: "POST" })
+  .validator((input: unknown) => z.object({ id: z.string().min(1).max(80) }).parse(input))
+  .middleware([authMiddleware])
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const allowed = await requireFounder(sql, context.userId);
+    if (!allowed.ok) return allowed;
+    const updated = await sql`
+      update challenges
+      set submissions_close = now(), voting_close = now(), end_date = now()
+      where id = ${data.id} and is_demo = false and results_published = false
+      returning id
+    `;
+    if (!updated.length) return { ok: false as const, error: "That challenge is already closed." };
+    await awardIfDue(sql);
+    return { ok: true as const };
   });
 
 function mapPerson(row: Record<string, unknown>): PersonCard {
@@ -661,6 +851,7 @@ export const getExplore = createServerFn({ method: "GET" })
         false as followed_by_me
       from profiles p
       where p.user_id <> ${me}
+        and p.is_demo = false
         and not exists (
           select 1 from follows f where f.follower_id = ${me} and f.following_id = p.user_id
         )
@@ -673,6 +864,7 @@ export const getExplore = createServerFn({ method: "GET" })
         exists(select 1 from follows f where f.follower_id = ${me} and f.following_id = p.user_id) as followed_by_me
       from profiles p
       where p.user_id <> ${me}
+        and p.is_demo = false
       order by p.created_at desc
       limit 8
     `;
@@ -681,6 +873,7 @@ export const getExplore = createServerFn({ method: "GET" })
         (select count(*)::int from likes l where l.post_id = p.id) as like_count
       from posts p
       join profiles pr on pr.user_id = p.user_id
+      where p.is_demo = false
       order by like_count desc, p.created_at desc
       limit 8
     `;
@@ -690,6 +883,7 @@ export const getExplore = createServerFn({ method: "GET" })
       from posts p
       join profiles pr on pr.user_id = p.user_id
       where p.created_at > now() - interval '21 days'
+        and p.is_demo = false
       order by like_count desc, p.created_at desc
       limit 8
     `;
@@ -702,8 +896,19 @@ export const getExplore = createServerFn({ method: "GET" })
       join posts p on p.id = s.post_id
       join profiles pr on pr.user_id = r.user_id
       where r.place = 1
+        and c.is_demo = false
+        and c.results_published = true
       order by c.end_date desc
       limit 4
+    `;
+    const lookbook = await sql<{ id: string; image_url: string; username: string; like_count: number }>`
+      select p.id, p.image_url, pr.username,
+        (select count(*)::int from likes l where l.post_id = p.id) as like_count
+      from posts p
+      join profiles pr on pr.user_id = p.user_id
+      where p.is_demo = true
+      order by p.created_at desc
+      limit 12
     `;
     return {
       recommended: recommended.map(mapPerson),
@@ -712,6 +917,9 @@ export const getExplore = createServerFn({ method: "GET" })
         id: p.id, imageUrl: p.image_url, username: p.username, likeCount: asNum(p.like_count),
       })),
       trending: trending.map((p) => ({
+        id: p.id, imageUrl: p.image_url, username: p.username, likeCount: asNum(p.like_count),
+      })),
+      lookbook: lookbook.map((p) => ({
         id: p.id, imageUrl: p.image_url, username: p.username, likeCount: asNum(p.like_count),
       })),
       winners: winners.map((w) => ({

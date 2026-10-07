@@ -154,6 +154,36 @@ async function createPgliteSql(): Promise<Sql> {
         await tx.query("insert into _migrations (name) values ($1)", [name]);
       });
     }
+    // Repair a preview database that was opened before later columns existed.
+    // Additive only: no drops, no deletes, no second copy of a profile.
+    await pg.exec(`
+      alter table profiles add column if not exists role text not null default 'member';
+      alter table profiles add column if not exists is_demo boolean not null default false;
+      alter table profiles add column if not exists level_key text not null default 'new_face';
+      alter table posts add column if not exists is_demo boolean not null default false;
+      alter table challenges add column if not exists is_demo boolean not null default false;
+      alter table challenges add column if not exists season_id text not null default '';
+      alter table challenges add column if not exists submissions_close timestamptz;
+      alter table challenges add column if not exists voting_close timestamptz;
+      alter table challenges add column if not exists vote_budget integer not null default 10;
+      alter table challenges add column if not exists participation_points integer not null default 25;
+      alter table challenges add column if not exists vote_points integer not null default 5;
+      alter table challenges add column if not exists results_published boolean not null default false;
+      update profiles set is_demo = true where user_id like 'demo_%' and is_demo = false;
+      update posts set is_demo = true where user_id like 'demo_%' and is_demo = false;
+      update challenges
+        set is_demo = true,
+            results_published = true,
+            submissions_close = coalesce(submissions_close, end_date),
+            voting_close = coalesce(voting_close, end_date)
+        where id in ('ch_porcelain', 'ch_neon', 'ch_velvet');
+    `);
+    const present = await pg.query<{ column_name: string }>(
+      "select column_name from information_schema.columns where table_name = 'profiles' and column_name in ('is_demo','role','level_key')",
+    );
+    if (present.rows.length < 3) {
+      throw new Error("profiles is missing is_demo, role, or level_key after repair");
+    }
   };
   const pass = (globalRef.__pgliteMigrateChain__ ?? Promise.resolve())
     .catch(() => undefined) // an earlier failed pass must not wedge the chain
@@ -230,9 +260,9 @@ const globalBoot = globalThis as typeof globalThis & {
   __pgBootstrapPromise__?: Promise<void>;
 };
 if (typeof window === "undefined" && dbSource === "pglite") {
-  globalBoot.__pgBootstrapPromise__ ??= ensureDbReady().catch((err) => {
-    globalBoot.__pgBootstrapPromise__ = undefined;
+  const boot = ensureDbReady().catch((err) => {
     console.error("[db] PGLite bootstrap failed:", err);
     throw err;
   });
+  globalBoot.__pgBootstrapPromise__ = boot;
 }

@@ -1,155 +1,254 @@
-I tested the preview and found both a blocking startup issue and a major visual-direction issue. Please fix both while preserving the existing real app architecture and functionality.
+Quiero hacer ahora una actualización importante de VOTE TO IMPRESS. NO reconstruyas la aplicación desde cero y NO elimines ni rompas la autenticación, base de datos, perfiles, posts, follows, likes, comentarios, challenges ni el resto de la arquitectura que ya funciona. Trabaja sobre el proyecto existente.
 
-1. FIX THE PREVIEW STARTUP / LOADING ISSUE FIRST
+Voy a proporcionarte imágenes de referencia de mi logo, personajes y estética. ÚSALAS COMO REFERENCIA ARTÍSTICA Y DE DIRECCIÓN VISUAL, no como imágenes que debas copiar literalmente ni reutilizar directamente. Quiero que la identidad final sea ORIGINAL y propia de Vote to Impress.
 
-The first time I opened the preview, the app loaded and I could see the populated feed. After closing it and trying to open it again, the preview became stuck on the initial/loading screen and would not reach the app.
+1. IDENTIDAD VISUAL
 
-Please diagnose and fix this before anything else.
+Quiero abandonar completamente la estética beige, plana y genérica de red social.
 
-Check:
+Vote to Impress debe sentirse como una mezcla de:
 
-* authentication/session initialization
-* PostgreSQL/database connection
-* initial data loading
-* routing
-* loading states
-* any dependency that can prevent the app from reaching the first screen
+* 3D fashion/avatar game
+* high-fashion editorial
+* glamour
+* cute digital world
+* camp
+* futuristic fashion
+* Bratz-inspired attitude
+* Monster High-inspired dark/cute energy
+* videojuegos de moda y competición
 
-The app must reliably handle these states:
+NO quiero simplemente “fondo negro + botones rosas”. Quiero una identidad visual completa: personajes 3D estilizados, materiales glossy, iluminación de estudio, escenarios temáticos, elementos decorativos, tarjetas de competición, efectos de lujo, siluetas de moda, detalles coleccionables y una interfaz que parezca parte de un universo de fashion game.
 
-NEW VISITOR → Welcome/Auth screen
-AUTHENTICATED USER → Home
-LOADING → clear loading state, but never an endless blank/stuck screen
-ERROR → clear error message + retry option
+El logo que te proporcionaré debe ser una referencia principal para construir la identidad de marca, pero puedes desarrollar una estética propia alrededor de él.
 
-Do not remove or fake the existing authentication or database to solve this. Keep Better Auth and the real PostgreSQL architecture.
+La interfaz debe funcionar perfectamente tanto en móvil como en desktop.
 
-After fixing it, verify that the preview can be closed and reopened successfully.
+2. LANDING / PRIMERA VISITA
 
-2. FIX THE FIRST-TIME AUTHENTICATION EXPERIENCE
+Un usuario nuevo NUNCA debe entrar directamente a un feed aparentemente lleno de usuarios reales.
 
-When I first opened the app, it looked like I was already inside a populated social feed. I could not immediately find Create Account or Sign In.
+Primera visita:
+VOTE TO IMPRESS
+Logo/branding
+Presentación visual de la plataforma
+CREATE ACCOUNT
+SIGN IN
 
-That is not the desired first-time experience.
+Después de registrarse, el usuario entra a su propia experiencia.
 
-A completely new visitor must clearly see:
+Si todavía no existen publicaciones reales, NO inventes actividad comunitaria para hacer parecer que existen usuarios reales.
 
-* Create Account
-* Sign In
+Mostrar un empty state elegante, por ejemplo:
+“Your fashion era starts here.”
+“Create your first look and make an impression.”
 
-Only authenticated users should enter the personalized Home experience.
+El contenido demo debe estar claramente separado del contenido real de usuarios.
 
-Keep the existing real account system:
+3. SISTEMA DE CHALLENGES
 
-* username
-* email
-* password
-* optional profile photo
-* persistent user account
-* real database storage
+Quiero implementar un sistema real de competición semanal y mensual.
 
-Make Sign Out clearly accessible from Profile so the authentication flow can be tested.
+Cada semana debe existir un Weekly Challenge con:
 
-Do not replace authentication with demo/fake login.
+* tema
+* descripción
+* fecha/hora de inicio
+* fecha/hora de cierre
+* participantes
+* submissions
+* periodo de votación
+* ranking final
 
-3. REDESIGN THE VISUAL IDENTITY
+El sistema debe cerrar automáticamente la competición cuando termine el periodo establecido.
 
-The current beige, muted and generic social-media aesthetic is NOT the direction for Vote to Impress.
+NO quiero tener que contar votos manualmente cada semana.
 
-Do not make it look like a beige Instagram, Pinterest, Canva or generic lifestyle app.
+El backend debe calcular automáticamente:
 
-The new visual identity should feel like:
-
-3D fashion game + dark social network + cute digital world + high-fashion editorial + futuristic/camp.
-
-Think of Vote to Impress as a dark, glamorous 3D fashion universe where users show their characters, collect looks, compete in challenges and vote for each other.
-
-VISUAL DIRECTION:
-
-* dark backgrounds: black, charcoal, deep plum, deep navy and rich dark tones
-* glossy/electric accent colours mixed with tasteful soft pastel accents
-* dimensional 3D/game-inspired UI
-* subtle glow, shine and depth
-* premium fashion-editorial feeling
-* youthful, edgy, glamorous and slightly camp
-* cute details without becoming childish
-* futuristic fashion-game atmosphere
-* polished mobile-first interface
-* visually interesting cards and components without becoming cluttered
-
-PROFILE / AVATAR DIRECTION:
-The current realistic human profile-photo feeling does not fit the identity.
-
-Profiles should feel connected to fashion-game characters and 3D avatars. Support character/avatar imagery as the visual language of the community.
-
-However, do NOT remove the option for users to upload a real profile photo if the existing account system supports it. The visual design should simply make the 3D fashion/avatar aesthetic feel like the natural identity of the platform.
-
-POSTS:
-The user’s actual fashion looks must remain the star of the feed.
-
-Challenges and submitted looks should feel like fashion-game/editorial content, not generic social-media posts.
-
-4. PRESERVE EVERYTHING THAT ALREADY WORKS
-
-Do NOT rebuild the application from scratch.
-
-Do NOT remove or simplify:
-
-* real authentication
-* PostgreSQL database
-* user accounts
-* profiles
-* followers/following
-* likes
-* comments
-* Explore
-* For You / Following feed
-* image uploads
-* crop/reposition/zoom
-* Challenges
-* challenge submissions
-* voting
-* rankings
+* votos válidos
+* puntuaciones
+* posiciones
+* Top 3
+* ganador
 * Impress Points
-* wins and Top 3s
-* screenshot guide
-* existing database migrations
-* existing demo content
+* progreso de niveles
+* estadísticas del challenge
 
-Do NOT replace real functionality with mock data just to make the preview look better.
+Cuando termine una competición, el sistema debe publicar automáticamente el resultado.
 
-Keep the current React + TanStack Start + Tailwind + Better Auth + PostgreSQL architecture.
+4. VOTOS VS LIKES
 
-5. IMPORTANT: PRESERVE PROJECT CONTINUITY
+SEPARAR completamente:
 
-Keep the complete existing project and its structure.
+❤️ LIKE = interacción social normal. Puede utilizarse libremente.
 
-Do not create a separate replacement app.
+🏆 COMPETITIVE VOTE = voto oficial de una competición.
 
-The project must remain editable and publishable from this same project, with the database schema/migrations, screens, authentication setup and media assets preserved.
+Un usuario NO debe poder votar ilimitadamente dentro de un challenge.
 
-After making these changes, verify the complete flow:
+Implementar un sistema limitado de votos competitivos por competición. Como primera configuración propongo 10 votos competitivos por usuario y challenge.
 
-New visitor
-→ Welcome
-→ Create Account / Sign In
-→ Home
-→ Explore
-→ Profile
-→ Create Post
-→ Challenge
-→ Vote
-→ Ranking
+Reglas:
 
-Also verify:
+* un usuario puede utilizar cada voto para un participante diferente;
+* no puede votar dos veces al mismo participante en el mismo challenge;
+* no puede votar su propio submission;
+* los votos deben estar asociados a la cuenta autenticada;
+* evitar votos duplicados;
+* registrar los votos de forma segura en la base de datos.
 
-Close preview
-→ Reopen preview
-→ App loads correctly again.
+IMPORTANTE: no quiero que el feed normal permita convertir el scroll en una máquina de votar a todo el mundo. El voto competitivo debe pertenecer al sistema de competición, no al Like normal.
 
-The priority order is:
+5. RESULTADOS OCULTOS
 
-1. Fix startup/loading reliability.
-2. Fix the Welcome/Auth flow.
-3. Apply the new dark 3D fashion-game visual identity.
-4. Verify that all existing functionality still works.
+Durante la competición NO mostrar:
+
+* score
+* número de votos
+* posición
+* ranking provisional
+
+El objetivo es evitar que los participantes sepan quién va ganando y evitar comportamiento estratégico.
+
+Los resultados deben permanecer privados hasta que termine oficialmente el challenge.
+
+Cuando finalice:
+automáticamente publicar:
+
+🥇 1st Place
+🥈 2nd Place
+🥉 3rd Place
+
+y mostrar sus puntuaciones/resultados.
+
+El sistema debe conservar internamente todos los datos necesarios para auditoría y estadísticas aunque el público no pueda verlos durante la competición.
+
+6. PUNTOS Y NIVELES
+
+Crear un sistema de Impress Points.
+
+Los puntos deben poder obtenerse mediante:
+
+* participar en challenges
+* recibir votos competitivos
+* quedar en posiciones altas
+* Top 3
+* ganar challenges
+* participación y actividad válida
+
+Pero ganar debe tener mucho más peso que simplemente recibir likes.
+
+NO convertir seguidores directamente en puntos ni permitir que una cuenta con muchos seguidores gane automáticamente.
+
+Crear niveles de estilo, por ejemplo:
+
+NEW FACE
+RISING STAR
+FASHION ICON
+STYLE ROYALTY
+SUPERSTAR
+LEGEND
+
+El sistema debe poder ampliarse posteriormente con más niveles.
+
+Los puntos y niveles deben calcularse automáticamente y guardarse en la base de datos.
+
+7. FOLLOWERS NO DEBEN DECIDIR EL GANADOR
+
+El número de seguidores NO debe equivaler directamente a votos.
+
+Una persona con muchos seguidores puede tener mayor visibilidad, pero eso no significa que sus seguidores puedan convertir automáticamente esa popularidad en una victoria.
+
+Diseñar la arquitectura para que posteriormente podamos utilizar un sistema de puntuación normalizado si fuese necesario.
+
+8. TEMPORADAS MENSUALES
+
+Además de los Weekly Challenges, quiero una competición mensual.
+
+Ejemplo:
+
+OCTOBER — HAUNTED FASHION SEASON 🎃
+
+Cada semana existen diferentes challenges.
+
+Al terminar el mes, el sistema calcula automáticamente el rendimiento acumulado de los participantes y determina:
+
+👑 MONTHLY WINNER
+🥇 Monthly Top 3
+🏆 Weekly Winners
+
+Quiero que una persona pueda ganar una semana y aun así no necesariamente ganar el mes. El rendimiento consistente debe importar.
+
+Para Halloween, la estética mensual puede transformarse temporalmente en una mezcla ORIGINAL de glamour oscuro, cute horror, fashion dolls, Monster High energy y Bratz attitude.
+
+IMPORTANTE: esto debe ser un sistema de temas visuales configurables. En el futuro podremos cambiar Halloween por Navidad, San Valentín, verano, futurismo, etc., sin reconstruir la aplicación.
+
+9. FOUNDER
+
+Crear un rol especial para el creador de la plataforma.
+
+Mi cuenta debe tener permanentemente:
+
+👑 FOUNDER
+
+con badge visual exclusivo.
+
+El Founder debe tener:
+
+* perfil oficial
+* badge permanente
+* capacidad administrativa para crear/gestionar challenges
+* capacidad para configurar temporadas
+* acceso a funciones administrativas futuras
+* identidad visual especial
+
+NO quiero simplemente recibir puntos artificiales ni manipular las votaciones.
+
+Founder debe ser un rol independiente de la clasificación competitiva normal.
+
+10. AUTOMATIZACIÓN
+
+Todo lo anterior debe estar diseñado para funcionar automáticamente.
+
+No quiero depender de mí contando votos cada semana.
+
+El sistema debe manejar automáticamente:
+
+* apertura de challenge
+* cierre de submissions
+* periodo de votación
+* cierre de votación
+* validación de votos
+* cálculo de resultados
+* ranking
+* Top 3
+* ganador
+* distribución de Impress Points
+* actualización de niveles
+* publicación del resultado
+* actualización de estadísticas
+* cierre de temporada mensual
+
+La arquitectura debe permitir posteriormente añadir notificaciones automáticas.
+
+11. IMPORTANTÍSIMO
+
+Antes de modificar código, revisa la arquitectura actual y conserva todo lo que ya funciona.
+
+NO reemplaces la base de datos.
+NO elimines Better Auth.
+NO elimines PostgreSQL.
+NO conviertas esto en una maqueta.
+NO sustituir funcionalidades reales por datos falsos.
+
+Quiero una aplicación real y escalable.
+
+Después de implementar los cambios, comprueba el flujo completo:
+
+NEW VISITOR → LANDING → CREATE ACCOUNT → PROFILE → CREATE LOOK → WEEKLY CHALLENGE → SUBMIT → VOTING → CHALLENGE CLOSES → AUTOMATIC CALCULATION → WINNER → IMPRESS POINTS → LEVEL UPDATE → MONTHLY RANKING.
+
+Primero asegúrate de que todo funciona. Después quiero revisar visualmente el resultado.
+
+IMPORTANTE SOBRE GITHUB:
+Como el proyecto no se sincroniza automáticamente con GitHub, después de que estos cambios estén implementados y yo confirme que funcionan correctamente, quiero EXPORTAR/ACTUALIZAR el proyecto en nuestro repositorio privado de GitHub como backup de esta versión. No hagas ningún cambio destructivo que pueda dificultar continuar el proyecto fuera de Grok.

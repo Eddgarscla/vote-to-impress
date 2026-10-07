@@ -25,7 +25,7 @@ function CreatePage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const exportRef = useRef<(() => Promise<string>) | null>(null);
-  const active = (challenges.data ?? []).filter((c) => c.phase === "active");
+  const active = (challenges.data?.challenges ?? []).filter((c) => c.phase === "open");
 
   function onFile(file: File | undefined) {
     setError(null);

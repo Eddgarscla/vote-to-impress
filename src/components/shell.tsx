@@ -6,7 +6,8 @@ import { BootProblem, BootScreen } from "@/components/boot";
 import { Mark } from "@/components/mark";
 import { cn } from "@/lib/cn";
 import { useSessionBoot } from "@/lib/auth/use-session-boot";
-import { ensureProfile } from "@/lib/vti/server";
+import { ensureProfile, getFloor } from "@/lib/vti/server";
+import { useQuery } from "@/lib/vti/use-query";
 
 const NAV = [
   { to: "/home", label: "Home", icon: House },
@@ -27,7 +28,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [profileNote, setProfileNote] = useState<string | null>(null);
   const [profileTick, setProfileTick] = useState(0);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
   const user = boot.user;
+  const floor = useQuery(user ? "floor" : "signed-out", () => (user ? getFloor() : Promise.resolve(null)));
+  const THEMES = new Set(["haunted", "frost", "valentine"]);
+  const themeKey = floor.data?.themeKey ?? "gloss";
+  const seasonClass = THEMES.has(themeKey) ? `season-${themeKey}` : "";
 
   useEffect(() => {
     if (!user) return;
@@ -67,8 +73,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!user) return <Navigate to="/" />;
 
   return (
-    <div className="min-h-dvh bg-stone">
-      <div className="stage relative">
+    <div className={cn("min-h-dvh bg-stone", seasonClass)}>
+      <div className={cn("stage relative", seasonClass)}>
         {profileNote ? (
           <div className="flex items-center justify-between gap-3 border-b border-line bg-chip px-4 py-3 text-sm">
             <p className="text-ink">{profileNote}</p>
@@ -78,7 +84,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         ) : null}
         {children}
-        <nav className="nav-dock nav-safe fixed bottom-0 z-30 flex w-full max-w-[640px] items-end justify-around px-1 pt-1" aria-label="Primary">
+        <nav className="nav-dock nav-safe fixed bottom-0 z-30 flex w-full max-w-[640px] items-end justify-around px-1 pt-1 lg:max-w-[1080px]" aria-label="Primary">
           {NAV.map((item) => {
             const on = activePath(pathname, item.to);
             const Icon = item.icon;

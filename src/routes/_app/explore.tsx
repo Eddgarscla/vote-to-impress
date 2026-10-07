@@ -56,10 +56,10 @@ function ExplorePage() {
                   <Button variant="primary" className="h-10 px-4" onClick={() => void onFollow(person)}>Follow</Button>
                 </li>
               ))}
-              {data.recommended.length === 0 ? <li className="px-4 py-6 text-sm text-muted">You are following everyone so far.</li> : null}
+              {data.recommended.length === 0 ? <li className="px-4 py-6 text-sm text-muted">No other players yet. The studio lookbook is sample art, not a live crowd.</li> : null}
             </ul>
           </section>
-          <LookRail title="Popular looks" looks={data.popular} />
+          <LookRail title="Studio lookbook" looks={data.lookbook} note="Sample looks from the studio. Not live players." />
           <section>
             <h2 className="px-4 font-display text-2xl">New users</h2>
             <ul className="rail mt-3 px-4 pb-1">
@@ -98,10 +98,11 @@ function ExplorePage() {
   );
 }
 
-function LookRail({ title, looks }: { title: string; looks: { id: string; imageUrl: string; username: string; likeCount: number }[] }) {
+function LookRail({ title, looks, note }: { title: string; looks: { id: string; imageUrl: string; username: string; likeCount: number }[]; note?: string }) {
   return (
     <section>
       <h2 className="px-4 font-display text-2xl">{title}</h2>
+      {note ? <p className="px-4 pt-1 text-xs text-muted">{note}</p> : null}
       <ul className="rail mt-3 px-4 pb-1">
         {looks.map((look) => (
           <li key={look.id} className="w-36 shrink-0">

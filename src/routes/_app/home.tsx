@@ -54,12 +54,15 @@ function HomePage() {
       {query.loading ? <LoadingBlock label="Loading looks" /> : null}
       {query.error ? <ErrorNote message={query.error} onRetry={query.reload} /> : null}
       {posts && posts.length === 0 ? (
-        <div className="px-6 py-16 text-center">
-          <p className="font-display text-2xl">Nothing here yet.</p>
-          <p className="mt-2 text-sm text-muted">Follow a few people and their looks will land in this feed.</p>
-          <Link to="/explore" className="mt-5 inline-flex h-12 items-center rounded-full bg-ink px-5 text-sm font-medium text-paper">
-            Explore looks
-          </Link>
+        <div className="relative mx-4 mt-6 overflow-hidden rounded-[2rem]">
+          <img src="/media/brand/hero.jpg" alt="" className="absolute inset-0 h-full w-full object-cover object-top" />
+          <div className="relative bg-gradient-to-t from-paper via-paper/85 to-paper/20 px-6 py-16 text-center">
+            <p className="font-display text-3xl">Your fashion era starts here.</p>
+            <p className="mt-2 text-sm text-muted">Create your first look and make an impression.</p>
+            <Link to="/create" search={{ challenge: undefined }} className="btn-glow mt-5 inline-flex h-12 items-center rounded-full px-5 text-sm font-semibold">
+              Create a look
+            </Link>
+          </div>
         </div>
       ) : null}
       {posts?.map((post) => <PostCard key={post.id} post={post} onLike={(p) => void onLike(p)} />)}

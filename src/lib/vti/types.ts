@@ -56,9 +56,14 @@ export type ProfilePayload = {
   impressPoints: number;
   challengeWins: number;
   topPlacements: number;
+  role: "member" | "founder";
+  levelKey: string;
+  levelLabel: string;
   posts: ProfilePost[];
   placements: Placement[];
 };
+
+export type ChallengePhase = "upcoming" | "open" | "voting" | "ended";
 
 export type ChallengeSummary = {
   id: string;
@@ -68,11 +73,16 @@ export type ChallengeSummary = {
   theme: string;
   startDate: string;
   endDate: string;
-  phase: "active" | "ended";
+  submissionsClose: string;
+  votingClose: string;
+  phase: ChallengePhase;
   participants: number;
   pointsFirst: number;
   pointsSecond: number;
   pointsThird: number;
+  voteBudget: number;
+  isDemo: boolean;
+  seasonId: string;
 };
 
 export type RankedLook = {
@@ -83,10 +93,10 @@ export type RankedLook = {
   avatarUrl: string | null;
   imageUrl: string;
   caption: string;
-  votes: number;
+  votes: number | null;
   votedByMe: boolean;
-  place: number;
-  points: number;
+  place: number | null;
+  points: number | null;
   pointsLabel: string;
 };
 
@@ -100,6 +110,36 @@ export type ChallengeDetail = ChallengeSummary & {
   ranking: RankedLook[];
   mySubmissionId: string | null;
   eligiblePosts: EligiblePost[];
+  canSubmit: boolean;
+  canVote: boolean;
+  resultsPublic: boolean;
+  votesUsed: number;
+  votesLeft: number;
+};
+
+export type SeasonPodium = {
+  place: number;
+  username: string;
+  avatarUrl: string | null;
+  points: number;
+  weeklyWins: number;
+};
+
+export type SeasonCard = {
+  id: string;
+  title: string;
+  tagline: string;
+  themeKey: string;
+  startsAt: string;
+  endsAt: string;
+  published: boolean;
+  podium: SeasonPodium[];
+};
+
+export type ChallengeBoard = {
+  season: SeasonCard | null;
+  challenges: ChallengeSummary[];
+  role: "member" | "founder";
 };
 
 export type PersonCard = {
@@ -134,6 +174,7 @@ export type ExplorePayload = {
   newUsers: PersonCard[];
   trending: ExploreLook[];
   winners: WinnerCard[];
+  lookbook: ExploreLook[];
 };
 
 export type Ok = { ok: true };

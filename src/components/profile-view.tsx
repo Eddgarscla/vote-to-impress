@@ -5,6 +5,7 @@ import { Button, ErrorNote, Field, LoadingBlock, TextArea, TextInput } from "@/c
 import { UserButton } from "@/lib/auth/gates";
 import { compact, placeLabel, placeMedal } from "@/lib/vti/format";
 import { compressAvatar, isLikelyImage } from "@/lib/vti/image";
+import { levelFor } from "@/lib/vti/levels";
 import { getProfile, toggleFollow, updateProfile } from "@/lib/vti/server";
 import type { ProfilePayload } from "@/lib/vti/types";
 import { useQuery } from "@/lib/vti/use-query";
@@ -35,6 +36,10 @@ export function ProfileView({ username }: { username?: string }) {
     return <ErrorNote message={query.error ?? "That profile is not here."} onRetry={query.reload} />;
   }
 
+  const level = levelFor(profile.impressPoints);
+  const span = level.nextAt ?? profile.impressPoints;
+  const progress = level.nextAt ? Math.min(100, Math.round((profile.impressPoints / level.nextAt) * 100)) : 100;
+
   return (
     <div className="pb-nav">
       <header className="px-5 pt-6">
@@ -42,6 +47,16 @@ export function ProfileView({ username }: { username?: string }) {
           <Avatar src={profile.avatarUrl} name={profile.username} size="xl" />
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-3xl leading-none">{profile.username}</h1>
+            <p className="mt-2 flex flex-wrap items-center gap-2">
+              {profile.role === "founder" ? <span className="founder-badge">Founder</span> : null}
+              <span className="text-xs tracking-widest text-gold uppercase">{profile.levelLabel}</span>
+            </p>
+            <div className="mt-2 max-w-xs">
+              <div className="level-pip" aria-hidden="true"><span style={{ width: `${progress}%` }} /></div>
+              <p className="mt-1 text-xs text-muted">
+                {level.nextLabel ? `${profile.impressPoints} / ${span} toward ${level.nextLabel}` : "Legend. The top of the ladder."}
+              </p>
+            </div>
             {profile.bio ? <p className="mt-2 text-sm text-ink">{profile.bio}</p> : <p className="mt-2 text-sm text-muted">No bio yet.</p>}
           </div>
         </div>

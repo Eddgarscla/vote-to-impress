@@ -29,6 +29,7 @@ export function PostCard({ post, onLike }: { post: Post; onLike: (post: Post) =>
           className="inline-flex h-11 items-center gap-1.5 rounded-full px-2 text-sm"
         >
           <Heart className={cn("size-5", post.likedByMe && "fill-accent text-accent")} />
+          <span>Like</span>
           <span className="tabular-nums">{compact(post.likeCount)}</span>
         </button>
         <Link
