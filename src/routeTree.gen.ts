@@ -18,6 +18,7 @@ import { Route as AppFounderRouteImport } from './routes/_app/founder'
 import { Route as AppHomeRouteImport } from './routes/_app/home'
 import { Route as AppLookPopRouteImport } from './routes/_app/look-pop'
 import { Route as AppProfileRouteImport } from './routes/_app/profile'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppChallengesIndexRouteImport } from './routes/_app/challenges/index'
 import { Route as AppChallengesChallengeIdRouteImport } from './routes/_app/challenges/$challengeId'
 import { Route as AppPPostIdRouteImport } from './routes/_app/p/$postId'
@@ -68,6 +69,11 @@ const AppProfileRoute = AppProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppChallengesIndexRoute = AppChallengesIndexRouteImport.update({
   id: '/challenges/',
   path: '/challenges/',
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/home': typeof AppHomeRoute
   '/look-pop': typeof AppLookPopRoute
   '/profile': typeof AppProfileRoute
+  '/settings': typeof AppSettingsRoute
   '/challenges/$challengeId': typeof AppChallengesChallengeIdRoute
   '/p/$postId': typeof AppPPostIdRoute
   '/u/$username': typeof AppUUsernameRoute
@@ -119,6 +126,7 @@ export interface FileRoutesByTo {
   '/home': typeof AppHomeRoute
   '/look-pop': typeof AppLookPopRoute
   '/profile': typeof AppProfileRoute
+  '/settings': typeof AppSettingsRoute
   '/challenges/$challengeId': typeof AppChallengesChallengeIdRoute
   '/p/$postId': typeof AppPPostIdRoute
   '/u/$username': typeof AppUUsernameRoute
@@ -136,6 +144,7 @@ export interface FileRoutesById {
   '/_app/home': typeof AppHomeRoute
   '/_app/look-pop': typeof AppLookPopRoute
   '/_app/profile': typeof AppProfileRoute
+  '/_app/settings': typeof AppSettingsRoute
   '/_app/challenges/$challengeId': typeof AppChallengesChallengeIdRoute
   '/_app/p/$postId': typeof AppPPostIdRoute
   '/_app/u/$username': typeof AppUUsernameRoute
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/home'
     | '/look-pop'
     | '/profile'
+    | '/settings'
     | '/challenges/$challengeId'
     | '/p/$postId'
     | '/u/$username'
@@ -168,6 +178,7 @@ export interface FileRouteTypes {
     | '/home'
     | '/look-pop'
     | '/profile'
+    | '/settings'
     | '/challenges/$challengeId'
     | '/p/$postId'
     | '/u/$username'
@@ -184,6 +195,7 @@ export interface FileRouteTypes {
     | '/_app/home'
     | '/_app/look-pop'
     | '/_app/profile'
+    | '/_app/settings'
     | '/_app/challenges/$challengeId'
     | '/_app/p/$postId'
     | '/_app/u/$username'
@@ -263,6 +275,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProfileRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/challenges/': {
       id: '/_app/challenges/'
       path: '/challenges'
@@ -308,6 +327,7 @@ interface AppRouteChildren {
   AppHomeRoute: typeof AppHomeRoute
   AppLookPopRoute: typeof AppLookPopRoute
   AppProfileRoute: typeof AppProfileRoute
+  AppSettingsRoute: typeof AppSettingsRoute
   AppChallengesChallengeIdRoute: typeof AppChallengesChallengeIdRoute
   AppPPostIdRoute: typeof AppPPostIdRoute
   AppUUsernameRoute: typeof AppUUsernameRoute
@@ -321,6 +341,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppHomeRoute: AppHomeRoute,
   AppLookPopRoute: AppLookPopRoute,
   AppProfileRoute: AppProfileRoute,
+  AppSettingsRoute: AppSettingsRoute,
   AppChallengesChallengeIdRoute: AppChallengesChallengeIdRoute,
   AppPPostIdRoute: AppPPostIdRoute,
   AppUUsernameRoute: AppUUsernameRoute,

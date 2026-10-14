@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { Mark, Wordmark } from "@/components/mark";
+import { useI18n } from "@/lib/i18n";
 
 export function BootScreen({ label = "Opening the floor" }: { label?: string }) {
+  const { t } = useI18n();
   return (
     <div className="min-h-dvh bg-stone" id="vti-boot" data-state="loading">
       <main className="stage flex min-h-dvh flex-col items-center justify-center px-6 text-center" role="status" aria-live="polite" aria-label={label}>
@@ -12,9 +14,9 @@ export function BootScreen({ label = "Opening the floor" }: { label?: string }) 
           <div className="boot-bar h-full w-1/2 rounded-full bg-accent" />
         </div>
         <div id="vti-boot-fallback" hidden className="mt-8 max-w-xs">
-          <p className="text-sm text-ink">The floor did not open. Your connection may have dropped.</p>
+          <p className="text-sm text-ink">{t("bootDropped")}</p>
           <button type="button" className="btn-glow mt-4 inline-flex h-12 items-center justify-center rounded-full px-5 text-sm font-medium" onClick={() => window.location.reload()}>
-            Try again
+            {t("tryAgain")}
           </button>
         </div>
         <script
@@ -35,17 +37,18 @@ export function BootProblem({
   message: string;
   onRetry: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="min-h-dvh bg-stone">
       <main className="stage flex min-h-dvh flex-col items-center justify-center px-6 text-center">
         <Mark className="size-12" />
-        <h1 className="mt-4 font-display text-3xl leading-none">Could not open the floor</h1>
+        <h1 className="mt-4 font-display text-3xl leading-none">{t("bootFailed")}</h1>
         <p className="mt-3 max-w-xs text-sm text-muted">{message}</p>
         <button type="button" className="btn-glow mt-6 inline-flex h-12 items-center justify-center rounded-full px-5 text-sm font-medium" onClick={onRetry}>
-          Try again
+          {t("tryAgain")}
         </button>
         <Link to="/" className="mt-4 text-sm text-ink underline underline-offset-4">
-          Back to welcome
+          {t("backWelcome")}
         </Link>
       </main>
     </div>

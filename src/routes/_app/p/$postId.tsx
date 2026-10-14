@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { ago, compact } from "@/lib/vti/format";
 import { LookGallery } from "@/components/gallery";
 import { VerifiedMark } from "@/components/verified";
+import { useI18n } from "@/lib/i18n";
 import { addComment, deletePost, getPost, toggleLike, updatePost } from "@/lib/vti/server";
 import { useQuery } from "@/lib/vti/use-query";
 
@@ -22,6 +23,8 @@ function PostPage() {
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [pop, setPop] = useState(false);
+  const { t, lang } = useI18n();
   const data = query.data;
 
   async function onLike() {
@@ -62,13 +65,13 @@ function PostPage() {
 
   return (
     <div className="pb-nav">
-      <TopBar title={data?.post.author.username ?? "Look"} fallback="/home" />
-      {query.loading ? <LoadingBlock label="Loading look" /> : null}
+      <TopBar title={data?.post.author.username ?? t("lookTitle")} fallback="/home" />
+      {query.loading ? <LoadingBlock label={t("loadingLook")} /> : null}
       {query.error ? <ErrorNote message={query.error} onRetry={query.reload} /> : null}
-      {data === null && !query.loading && !query.error ? <ErrorNote message="That look is not here." /> : null}
+      {data === null && !query.loading && !query.error ? <ErrorNote message={t("missingLook")} /> : null}
       {data ? (
         <article>
-          <LookGallery images={data.post.images?.length ? data.post.images : [data.post.imageUrl]} alt={data.post.caption || "Look"} />
+          <LookGallery images={data.post.images?.length ? data.post.images : [data.post.imageUrl]} alt={data.post.caption || t("lookTitle")} />
           <div className="flex items-center gap-3 px-4 py-3">
             <Link to="/u/$username" params={{ username: data.post.author.username }} className="flex min-w-0 flex-1 items-center gap-3">
               <Avatar src={data.post.author.avatarUrl} name={data.post.author.username} />
@@ -77,11 +80,21 @@ function PostPage() {
                   {data.post.author.username}
                   {data.post.author.verified ? <VerifiedMark /> : null}
                 </span>
-                <span className="block text-xs text-muted">{ago(data.post.createdAt)}</span>
+                <span className="block text-xs text-muted">{ago(data.post.createdAt, lang)}</span>
               </span>
             </Link>
-            <button type="button" onClick={() => void onLike()} className="inline-flex h-11 items-center gap-1.5 text-sm" aria-pressed={data.post.likedByMe}>
-              <Heart className={cn("size-5", data.post.likedByMe && "fill-accent text-accent")} />
+            <button
+              type="button"
+              onClick={() => {
+                setPop(true);
+                window.setTimeout(() => setPop(false), 420);
+                void onLike();
+              }}
+              className="inline-flex h-11 items-center gap-1.5 text-sm"
+              aria-pressed={data.post.likedByMe}
+              aria-label={data.post.likedByMe ? t("unlike") : t("like")}
+            >
+              <Heart className={cn("size-5", data.post.likedByMe && "fill-accent text-accent", pop && "heart-pop")} />
               <span className="tabular-nums">{compact(data.post.likeCount)}</span>
             </button>
           </div>
@@ -130,17 +143,17 @@ function PostPage() {
                               });
                             }}
                           >
-                            Remove
+                            {t("remove")}
                           </button>
                         </li>
                       ))}
                     </ul>
                   ) : null}
-                  <Button type="submit">Save caption</Button>
+                  <Button type="submit">{t("saveCaption")}</Button>
                 </form>
               ) : (
                 <button type="button" className="text-sm underline underline-offset-4" onClick={() => { setCaption(data.post.caption); setEditing(true); }}>
-                  Edit caption
+                  {t("editCaption")}
                 </button>
               )}
               <button
@@ -156,12 +169,12 @@ function PostPage() {
                   });
                 }}
               >
-                Delete look
+                {t("deleteLook")}
               </button>
             </div>
           ) : null}
           <section className="border-t border-line px-4 py-4">
-            <h2 className="text-sm font-medium">{data.comments.length} comments</h2>
+            <h2 className="text-sm font-medium">{data.comments.length} {t("comments")}</h2>
             <ul className="mt-3 space-y-4">
               {data.comments.map((comment) => (
                 <li key={comment.id} className="flex gap-3">
@@ -175,7 +188,7 @@ function PostPage() {
                       </Link>
                       {comment.body}
                     </p>
-                    <p className="mt-1 text-xs text-muted">{ago(comment.createdAt)}</p>
+                    <p className="mt-1 text-xs text-muted">{ago(comment.createdAt, lang)}</p>
                   </div>
                 </li>
               ))}
@@ -187,9 +200,9 @@ function PostPage() {
                 void onComment();
               }}
             >
-              <TextArea value={body} onChange={(e) => setBody(e.target.value)} maxLength={400} rows={2} placeholder="Add a comment" />
+              <TextArea value={body} onChange={(e) => setBody(e.target.value)} maxLength={400} rows={2} placeholder={t("addComment")} />
               {error ? <p className="text-sm text-accent">{error}</p> : null}
-              <Button type="submit" disabled={pending || !body.trim()}>{pending ? "Posting…" : "Comment"}</Button>
+              <Button type="submit" disabled={pending || !body.trim()}>{pending ? t("posting") : t("comment")}</Button>
             </form>
           </section>
         </article>

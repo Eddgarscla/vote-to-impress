@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
 
 /** Which database backend is active. */
@@ -105,13 +106,22 @@ function createNeonSql(): Promise<Sql> {
   return globalRef.__pgSqlPromise__;
 }
 
+function pgliteDataDir(): string | undefined {
+  const dir = process.env.PGLITE_DATA_DIR?.trim();
+  if (!dir || process.env.VERCEL) return undefined;
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 async function createPgliteSql(): Promise<Sql> {
   // Embedded Postgres, imported on demand so it never loads on the Neon path.
-  // One in-memory instance per process, shared across HMR module instances, so
-  // data survives source edits (it resets on dev-server restart).
+  // Preview (`PGLITE_DATA_DIR`) keeps one database on disk so accounts and
+  // sessions survive a dev-server restart. Deployed apps use Neon instead.
+  // The instance is shared across HMR so a source edit does not open a second DB.
   globalRef.__pgliteInstance__ ??= (async () => {
     const { PGlite } = await import("@electric-sql/pglite");
-    const pg = new PGlite({
+    const dataDir = pgliteDataDir();
+    const pg = new PGlite(dataDir, {
       parsers: {
         [OID_INT8]: Number,
         [OID_DATE]: identity,
@@ -155,6 +165,7 @@ async function createPgliteSql(): Promise<Sql> {
         await tx.query("insert into _migrations (name) values ($1)", [name]);
       });
     }
+    // Additive runway columns (0007) apply through the migration glob above.
     // Repair a preview database that was opened before later columns existed.
     // Additive only: no drops, no deletes, no second copy of a profile.
     await pg.exec(`

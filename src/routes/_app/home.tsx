@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Mark, Wordmark } from "@/components/mark";
 import { PostCard } from "@/components/post-card";
@@ -7,11 +7,12 @@ import { cn } from "@/lib/cn";
 import { getFeed, toggleLike } from "@/lib/vti/server";
 import type { PostCard as Post } from "@/lib/vti/types";
 import { useQuery } from "@/lib/vti/use-query";
-import { Link } from "@tanstack/react-router";
+import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_app/home")({ component: HomePage });
 
 function HomePage() {
+  const { t } = useI18n();
   const [mode, setMode] = useState<"foryou" | "following">("foryou");
   const query = useQuery(mode, () => getFeed({ data: { mode } }));
   const posts = query.data;
@@ -46,21 +47,21 @@ function HomePage() {
               onClick={() => setMode(id)}
               className={cn("h-11 text-sm", mode === id ? "border-b-2 border-accent font-medium text-ink" : "text-muted")}
             >
-              {id === "foryou" ? "For you" : "Following"}
+              {id === "foryou" ? t("forYou") : t("following")}
             </button>
           ))}
         </div>
       </header>
-      {query.loading ? <LoadingBlock label="Loading looks" /> : null}
+      {query.loading ? <LoadingBlock label={t("loadingLooks")} /> : null}
       {query.error ? <ErrorNote message={query.error} onRetry={query.reload} /> : null}
       {posts && posts.length === 0 ? (
         <div className="relative mx-4 mt-6 overflow-hidden rounded-[2rem]">
           <img src="/media/brand/hero.jpg" alt="" className="absolute inset-0 h-full w-full object-cover object-top" />
           <div className="relative bg-gradient-to-t from-paper via-paper/85 to-paper/20 px-6 py-16 text-center">
-            <p className="font-display text-3xl">Your fashion era starts here.</p>
-            <p className="mt-2 text-sm text-muted">Create your first look and make an impression.</p>
+            <p className="font-display text-3xl">{t("eraTitle")}</p>
+            <p className="mt-2 text-sm text-muted">{t("eraBody")}</p>
             <Link to="/create" search={{ challenge: undefined }} className="btn-glow mt-5 inline-flex h-12 items-center rounded-full px-5 text-sm font-semibold">
-              Create a look
+              {t("createLook")}
             </Link>
           </div>
         </div>

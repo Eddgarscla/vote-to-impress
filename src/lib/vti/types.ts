@@ -76,6 +76,9 @@ export type ProfilePayload = {
   robloxUsername: string;
   robloxUrl: string;
   showPersonal: boolean;
+  gender: string;
+  showGender: boolean;
+  genderChoices: string[];
   posts: ProfilePost[];
   placements: Placement[];
 };
@@ -100,7 +103,7 @@ export type ChallengeSummary = {
   voteBudget: number;
   isDemo: boolean;
   seasonId: string;
-  kind: "weekly" | "monthly";
+  kind: "daily" | "weekly" | "monthly";
   active: boolean;
 };
 
@@ -117,12 +120,61 @@ export type RankedLook = {
   place: number | null;
   points: number | null;
   pointsLabel: string;
+  stageId: string;
 };
 
 export type EligiblePost = {
   id: string;
   imageUrl: string;
   caption: string;
+};
+
+export type VoteWallet = {
+  balance: number;
+  max: number;
+  regen: number;
+  nextInMs: number | null;
+};
+
+export type StageCard = {
+  id: string;
+  challengeId: string;
+  title: string;
+  description: string;
+  requirement: string;
+  startsAt: string;
+  endsAt: string;
+  sortOrder: number;
+  open: boolean;
+};
+
+export type TwistCard = {
+  id: string;
+  challengeId: string;
+  title: string;
+  description: string;
+  requirement: string;
+  imageUrl: string;
+  startsAt: string;
+  endsAt: string;
+  live: boolean;
+};
+
+export type RewardBand = {
+  id: string;
+  scope: string;
+  placeFrom: number;
+  placeTo: number;
+  points: number;
+};
+
+export type VoteRules = {
+  max: number;
+  regen: number;
+  intervalMinutes: number;
+  allowMulti: boolean;
+  expiry: boolean;
+  bonus: boolean;
 };
 
 export type ChallengeDetail = ChallengeSummary & {
@@ -134,6 +186,10 @@ export type ChallengeDetail = ChallengeSummary & {
   resultsPublic: boolean;
   votesUsed: number;
   votesLeft: number;
+  wallet: VoteWallet;
+  stages: StageCard[];
+  twists: TwistCard[];
+  openStageId: string;
 };
 
 export type SeasonPodium = {
@@ -211,7 +267,7 @@ export type FounderChallengeRow = {
   title: string;
   description: string;
   theme: string;
-  kind: "weekly" | "monthly";
+  kind: "daily" | "weekly" | "monthly";
   phase: ChallengePhase;
   active: boolean;
   cancelled: boolean;
@@ -256,15 +312,35 @@ export type FounderPerson = {
 };
 
 export type FounderDesk = {
-  stats: { users: number; posts: number; votes: number; pending: number };
+  stats: {
+    users: number;
+    activeUsers: number;
+    posts: number;
+    followers: number;
+    participation: number;
+    votes: number;
+    pending: number;
+    points: number;
+    winners: number;
+  };
   themeKey: string;
   weeklyTheme: string;
   monthlyTheme: string;
+  themeName: string;
+  themeDescription: string;
+  themeStarts: string;
+  themeEnds: string;
+  accentColor: string;
   levels: LevelStep[];
   challenges: FounderChallengeRow[];
   requests: FounderRequest[];
   people: FounderPerson[];
   testAccounts: { username: string; email: string; password: string }[];
+  vote: VoteRules;
+  bands: RewardBand[];
+  stages: StageCard[];
+  twists: TwistCard[];
+  genders: { id: string; label: string; active: boolean }[];
 };
 
 export type Ok = { ok: true };

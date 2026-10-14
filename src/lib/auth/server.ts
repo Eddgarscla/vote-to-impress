@@ -17,9 +17,9 @@
  *   - Sandbox live preview: no injection -> falls back to the shared **preview
  *     client** (`./preview`) and derives the preview's `https://*.grok-sandbox.com`
  *     origin from the request, so real sign-in works (no demo users). Sessions
- *     and identities persist in the embedded PGLite DB (same DB as app data);
- *     the process restart wipes both. Live-preview iframe clients use a bearer
- *     token (partitioned cookies) — see `client.ts`.
+ *     and identities persist in the embedded PGLite DB (same DB as app data).
+ *     Preview keeps that database on disk when `PGLITE_DATA_DIR` is set, and
+ *     the iframe keeps its bearer token in localStorage — see `client.ts`.
  *   - Off (`VITE_AUTH_ENABLED=false`, the shipped default): no providers;
  *     `requireUserId` resolves a dev user with no database configured, and
  *     throws fail-closed once `DATABASE_URL` is set (see `verify.server.ts`).
@@ -34,6 +34,8 @@ import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { Pool } from "pg";
 import { ensureDbReady, getPglite } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
@@ -51,17 +53,39 @@ import {
 void ensureDbReady();
 
 /**
- * Preview secret must outlive module reloads: PGLite (and its session rows) is
- * stored on `globalThis`, so an HMR re-eval of this file must NOT mint a new
- * signing secret or every existing session becomes invalid mid-dev. Process
- * restart clears both the secret and PGLite together.
+ * Preview secret must outlive module reloads and process restarts. PGLite
+ * sessions are signed with this secret, so a new secret on every boot would
+ * sign everyone out even after the database is kept on disk. Deployed apps
+ * use BETTER_AUTH_SECRET and never read this file.
  */
+const PREVIEW_SECRET_PATH = "/workspace/.data/preview-auth-secret";
 const globalAuthRef = globalThis as typeof globalThis & {
   __grokAuthPreviewSecret__?: string;
 };
 function previewAuthSecret(): string {
-  globalAuthRef.__grokAuthPreviewSecret__ ??= randomBytes(32).toString("hex");
-  return globalAuthRef.__grokAuthPreviewSecret__;
+  if (globalAuthRef.__grokAuthPreviewSecret__) return globalAuthRef.__grokAuthPreviewSecret__;
+  if (!process.env.VERCEL) {
+    try {
+      const existing = readFileSync(PREVIEW_SECRET_PATH, "utf8").trim();
+      if (existing.length >= 32) {
+        globalAuthRef.__grokAuthPreviewSecret__ = existing;
+        return existing;
+      }
+    } catch {
+      /* first boot in this workspace */
+    }
+  }
+  const next = randomBytes(32).toString("hex");
+  globalAuthRef.__grokAuthPreviewSecret__ = next;
+  if (!process.env.VERCEL) {
+    try {
+      mkdirSync(dirname(PREVIEW_SECRET_PATH), { recursive: true });
+      writeFileSync(PREVIEW_SECRET_PATH, next, { mode: 0o600 });
+    } catch {
+      /* this process still keeps the secret in memory */
+    }
+  }
+  return next;
 }
 
 /** Read an env var, treating empty/whitespace as unset. */
@@ -208,7 +232,11 @@ export const auth = betterAuth({
   // (incl. the client's `/get-session`) skip the DB — this shrinks the "loading"
   // window and reduces auth flicker. See the `auth` skill for the full
   // flicker-prevention guidance (gate on `isPending`; SSR the session).
-  session: { cookieCache: { enabled: true, maxAge: 300 } },
+  session: {
+    expiresIn: 60 * 60 * 24 * 30,
+    updateAge: 60 * 60 * 24,
+    cookieCache: { enabled: true, maxAge: 300 },
+  },
 
   // Local email/password — toggled only via `./email-password` (not a plugin).
   ...(emailAndPasswordEnabled ? { emailAndPassword: { enabled: true } } : {}),

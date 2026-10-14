@@ -24,15 +24,20 @@ async function finalizeChallenge(sql: Sql, challengeId: string) {
     points_third: number;
     participation_points: number;
     vote_points: number;
-    vote_budget: number;
     season_id: string;
+    kind: string;
   }>`
-    select points_first, points_second, points_third, participation_points, vote_points, vote_budget, season_id
+    select points_first, points_second, points_third, participation_points, vote_points, season_id, kind
     from challenges where id = ${challengeId}
   `;
   const challenge = meta[0];
   if (!challenge) return;
-  const budget = Math.max(1, asNum(challenge.vote_budget) || 10);
+  const bands = await sql<{ place_from: number; place_to: number; points: number }>`
+    select place_from, place_to, points
+    from reward_bands
+    where scope = ${`challenge:${challengeId}`}
+    order by place_from asc
+  `;
   const ranked = await sql<{ user_id: string; votes: number }>`
     with entries as (
       select s.user_id, min(s.created_at) as created_at
@@ -43,8 +48,7 @@ async function finalizeChallenge(sql: Sql, challengeId: string) {
       group by s.user_id
     ),
     valid_votes as (
-      select s.user_id as candidate, v.voter_id, v.created_at,
-        row_number() over (partition by v.voter_id order by v.created_at, v.submission_id) as n
+      select s.user_id as candidate, coalesce(v.weight, 1) as weight
       from votes v
       join challenge_submissions s on s.id = v.submission_id
       join profiles voter on voter.user_id = v.voter_id
@@ -52,18 +56,31 @@ async function finalizeChallenge(sql: Sql, challengeId: string) {
         and v.voter_id <> s.user_id
         and voter.is_demo = false
     )
-    select e.user_id, count(v.voter_id)::int as votes
+    select e.user_id, coalesce(sum(v.weight), 0)::int as votes
     from entries e
-    left join valid_votes v on v.candidate = e.user_id and v.n <= ${budget}
+    left join valid_votes v on v.candidate = e.user_id
     group by e.user_id, e.created_at
-    order by count(v.voter_id) desc, e.created_at asc
+    order by coalesce(sum(v.weight), 0) desc, e.created_at asc
   `;
+  const participationBand = bands.find((band) => asNum(band.place_from) === 0);
+  const participation = participationBand ? asNum(participationBand.points) : asNum(challenge.participation_points);
+  const kind = ["daily", "weekly", "monthly"].includes(String(challenge.kind)) ? String(challenge.kind) : "weekly";
   let place = 0;
   for (const entry of ranked) {
     place += 1;
-    const placement =
-      place === 1 ? asNum(challenge.points_first) : place === 2 ? asNum(challenge.points_second) : place === 3 ? asNum(challenge.points_third) : 0;
-    const award = asNum(challenge.participation_points) + asNum(entry.votes) * asNum(challenge.vote_points) + placement;
+    const ranged = bands.find((band) => asNum(band.place_from) > 0 && place >= asNum(band.place_from) && place <= asNum(band.place_to));
+    const placement = ranged
+      ? asNum(ranged.points)
+      : bands.length
+        ? 0
+        : place === 1
+          ? asNum(challenge.points_first)
+          : place === 2
+            ? asNum(challenge.points_second)
+            : place === 3
+              ? asNum(challenge.points_third)
+              : 0;
+    const award = participation + asNum(entry.votes) * asNum(challenge.vote_points) + placement;
     const inserted = await sql<{ user_id: string }>`
       insert into challenge_results (challenge_id, user_id, place, points)
       values (${challengeId}, ${entry.user_id}, ${place}, ${award})
@@ -81,7 +98,7 @@ async function finalizeChallenge(sql: Sql, challengeId: string) {
     const seasonId = challenge.season_id || "";
     await sql`
       insert into point_events (id, user_id, source, challenge_id, season_id, points)
-      values (${`pe_${challengeId}_${entry.user_id}`}, ${entry.user_id}, 'weekly', ${challengeId}, ${seasonId}, ${award})
+      values (${`pe_${challengeId}_${entry.user_id}`}, ${entry.user_id}, ${kind}, ${challengeId}, ${seasonId}, ${award})
       on conflict (user_id, source, challenge_id, season_id) do nothing
     `;
     await syncLevel(sql, entry.user_id);
@@ -100,7 +117,7 @@ async function finalizeSeason(sql: Sql, seasonId: string) {
         where c.season_id = ${seasonId} and r.user_id = p.user_id and r.place = 1
       ), 0) as weekly_wins
     from profiles p
-    join point_events e on e.user_id = p.user_id and e.season_id = ${seasonId} and e.source = 'weekly'
+    join point_events e on e.user_id = p.user_id and e.season_id = ${seasonId} and e.source in ('daily', 'weekly', 'monthly') and e.challenge_id <> ''
     where p.is_demo = false
     group by p.user_id
     order by coalesce(sum(e.points), 0) desc, 3 desc, p.user_id asc

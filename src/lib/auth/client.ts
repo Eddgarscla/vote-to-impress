@@ -41,27 +41,47 @@ export const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== "false";
 export { GROK_PROVIDERS };
 
 // ── Live-preview bearer token ────────────────────────────────────────────────
-// The embedded preview iframe has partitioned cookies, so we keep the session's
-// bearer token in sessionStorage and attach it to every Better Auth request (and
-// to server functions, via `@/lib/auth/middleware`). Empty everywhere except the
-// preview after a popup sign-in, so the cookie path is untouched elsewhere.
+// The embedded preview iframe has partitioned cookies, so the session rides a
+// bearer token. It is stored in localStorage (and mirrored to sessionStorage)
+// so closing the preview and coming back later stays signed in. Deployed apps
+// use the cookie and do not need this token.
 const BEARER_KEY = "grok-auth.bearer-token";
 
-/** The stored preview bearer token, or null. */
-export function getBearerToken(): string | null {
-  if (typeof window === "undefined") return null;
+function readToken(store: Storage): string | null {
   try {
-    return window.sessionStorage.getItem(BEARER_KEY);
+    return store.getItem(BEARER_KEY);
   } catch {
     return null;
   }
 }
 
+/** The stored preview bearer token, or null. */
+export function getBearerToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const saved = readToken(window.localStorage);
+  if (saved) return saved;
+  const legacy = readToken(window.sessionStorage);
+  if (legacy) {
+    try {
+      window.localStorage.setItem(BEARER_KEY, legacy);
+    } catch {
+      /* keep the session for this tab */
+    }
+    return legacy;
+  }
+  return null;
+}
+
 function setBearerToken(token: string | null): void {
   if (typeof window === "undefined") return;
   try {
-    if (token) window.sessionStorage.setItem(BEARER_KEY, token);
-    else window.sessionStorage.removeItem(BEARER_KEY);
+    if (token) {
+      window.localStorage.setItem(BEARER_KEY, token);
+      window.sessionStorage.setItem(BEARER_KEY, token);
+    } else {
+      window.localStorage.removeItem(BEARER_KEY);
+      window.sessionStorage.removeItem(BEARER_KEY);
+    }
   } catch {
     /* storage unavailable — ignore */
   }
@@ -71,6 +91,11 @@ function setBearerToken(token: string | null): void {
 export function rememberBearerToken(token: string | null | undefined): void {
   if (!token) return;
   setBearerToken(token);
+}
+
+/** Drop a preview bearer before a new email sign-in so an older session is not sent along. */
+export function clearBearerToken(): void {
+  setBearerToken(null);
 }
 
 /**

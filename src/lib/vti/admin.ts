@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql, type Sql } from "@/lib/db";
 import { FOUNDER_EMAIL, isFounderEmail } from "@/lib/vti/founder";
+import { copyKindBands, loadBands, loadStages, loadTwists, loadVoteRules } from "@/lib/vti/runway";
 import type { ChallengePhase, FounderDesk } from "@/lib/vti/types";
 
 function asNum(v: unknown): number {
@@ -59,15 +60,29 @@ export const getFounderDesk = createServerFn({ method: "GET" })
     `;
     const allowed = await requireFounder(sql, context.userId);
     if (!allowed.ok) return { error: allowed.error };
-    const stats = await sql<{ users: number; posts: number; votes: number; pending: number }>`
+    const stats = await sql<{
+      users: number; posts: number; votes: number; pending: number;
+      followers: number; participation: number; points: number; winners: number; active_users: number;
+    }>`
       select
         (select count(*)::int from profiles where is_demo = false) as users,
         (select count(*)::int from posts where is_demo = false) as posts,
         (select count(*)::int from votes) as votes,
-        (select count(*)::int from verification_requests where status = 'pending') as pending
+        (select count(*)::int from verification_requests where status = 'pending') as pending,
+        (select count(*)::int from follows) as followers,
+        (select count(*)::int from challenge_submissions) as participation,
+        (select coalesce(sum(points), 0)::int from point_events) as points,
+        (select count(*)::int from challenge_results where place = 1) as winners,
+        (select count(distinct user_id)::int from (
+          select user_id from posts where is_demo = false and created_at > now() - interval '30 days'
+          union
+          select voter_id as user_id from votes where created_at > now() - interval '30 days'
+        ) active) as active_users
     `;
-    const settings = await sql<{ theme_key: string; weekly_theme: string; monthly_theme: string }>`
-      select theme_key, weekly_theme, monthly_theme from platform_settings where id = 'current'
+    const settings = await sql<Record<string, unknown>>`
+      select theme_key, weekly_theme, monthly_theme, theme_name, theme_description,
+        theme_starts, theme_ends, accent_color
+      from platform_settings where id = 'current'
     `;
     const levels = await sql<{ level_key: string; label: string; min_points: number }>`
       select level_key, label, min_points from level_thresholds order by sort_order asc, min_points asc
@@ -156,23 +171,41 @@ export const getFounderDesk = createServerFn({ method: "GET" })
       subsByChallenge.set(id, list);
     }
     const votersByChallenge = new Map(voterRows.map((row) => [row.challenge_id, asNum(row.voters)]));
+    const vote = await loadVoteRules(sql);
+    const bands = await loadBands(sql);
+    const stages = await loadStages(sql);
+    const twists = await loadTwists(sql);
+    const genders = await sql<{ id: string; label: string; active: boolean | string }>`
+      select id, label, active from gender_options order by sort_order asc, label asc
+    `;
+    const setting = settings[0] ?? {};
     return {
       stats: {
         users: asNum(stats[0]?.users),
+        activeUsers: asNum(stats[0]?.active_users),
         posts: asNum(stats[0]?.posts),
+        followers: asNum(stats[0]?.followers),
+        participation: asNum(stats[0]?.participation),
         votes: asNum(stats[0]?.votes),
         pending: asNum(stats[0]?.pending),
+        points: asNum(stats[0]?.points),
+        winners: asNum(stats[0]?.winners),
       },
-      themeKey: settings[0]?.theme_key ?? "haunted",
-      weeklyTheme: settings[0]?.weekly_theme ?? "",
-      monthlyTheme: settings[0]?.monthly_theme ?? "",
+      themeKey: String(setting.theme_key ?? "haunted"),
+      weeklyTheme: String(setting.weekly_theme ?? ""),
+      monthlyTheme: String(setting.monthly_theme ?? ""),
+      themeName: String(setting.theme_name ?? "Halloween"),
+      themeDescription: String(setting.theme_description ?? ""),
+      themeStarts: toIso(setting.theme_starts),
+      themeEnds: toIso(setting.theme_ends),
+      accentColor: String(setting.accent_color ?? ""),
       levels: levels.map((level) => ({ key: level.level_key, label: level.label, min: asNum(level.min_points) })),
       challenges: challenges.map((row) => ({
         id: String(row.id),
         title: String(row.title),
         description: String(row.description),
         theme: String(row.theme ?? ""),
-        kind: String(row.kind) === "monthly" ? "monthly" as const : "weekly" as const,
+        kind: (String(row.kind) === "daily" || String(row.kind) === "monthly" ? String(row.kind) : "weekly") as "daily" | "weekly" | "monthly",
         phase: String(row.phase) as ChallengePhase,
         active: asBool(row.active),
         cancelled: asBool(row.cancelled),
@@ -219,6 +252,11 @@ export const getFounderDesk = createServerFn({ method: "GET" })
         { username: "cassvelvet", email: "cassvelvet@test.votetoimpress.app", password: "RunwayTest1" },
         { username: "orioframe", email: "orioframe@test.votetoimpress.app", password: "RunwayTest1" },
       ],
+      vote,
+      bands,
+      stages,
+      twists,
+      genders: genders.map((row) => ({ id: row.id, label: row.label, active: asBool(row.active) })),
     };
   });
 
@@ -227,7 +265,7 @@ const challengeInput = z.object({
   title: z.string().min(3).max(80),
   description: z.string().min(3).max(400),
   theme: z.string().max(60),
-  kind: z.enum(["weekly", "monthly"]),
+  kind: z.enum(["daily", "weekly", "monthly"]),
   startsAt: z.string().min(8).max(40),
   endsAt: z.string().min(8).max(40),
   pointsFirst: z.number().int().min(0).max(10000),
@@ -235,6 +273,8 @@ const challengeInput = z.object({
   pointsThird: z.number().int().min(0).max(10000),
   participationPoints: z.number().int().min(0).max(10000).optional(),
   voteBudget: z.number().int().min(1).max(50).optional(),
+  banner: z.enum(["unchanged", "haunted", "lineup", "upload", "none"]).optional(),
+  imageDataUrl: z.string().max(1_200_000).optional(),
 });
 
 export const saveFounderChallenge = createServerFn({ method: "POST" })
@@ -251,8 +291,24 @@ export const saveFounderChallenge = createServerFn({ method: "POST" })
     }
     const participation = data.participationPoints ?? 25;
     const budget = data.voteBudget ?? 10;
-    const themeRow = await sql<{ theme_key: string }>`select theme_key from platform_settings where id = 'current'`;
-    const image = themeRow[0]?.theme_key === "haunted" ? "/media/brand/haunted.jpg" : "/media/brand/lineup.jpg";
+    const banner = data.banner ?? (data.id ? "unchanged" : "");
+    if (!data.id && !banner) {
+      return { ok: false as const, error: "Choose a banner, including None. The app will not pick one for you." };
+    }
+    if (banner === "upload") {
+      if (!data.imageDataUrl || !/^data:image\/(jpeg|png|webp);base64,/.test(data.imageDataUrl)) {
+        return { ok: false as const, error: "Upload a JPG, PNG, or WebP banner, or pick a different banner choice." };
+      }
+    }
+    const chosen = banner === "haunted"
+      ? "/media/brand/haunted.jpg"
+      : banner === "lineup"
+        ? "/media/brand/lineup.jpg"
+        : banner === "upload"
+          ? data.imageDataUrl ?? ""
+          : banner === "none"
+            ? ""
+            : null;
     if (data.id) {
       const updated = await sql`
         update challenges set
@@ -260,6 +316,7 @@ export const saveFounderChallenge = createServerFn({ method: "POST" })
           description = ${data.description.trim()},
           theme = ${data.theme.trim()},
           kind = ${data.kind},
+          image_url = coalesce(${chosen}, image_url),
           start_date = ${start.toISOString()},
           end_date = ${end.toISOString()},
           submissions_close = ${end.toISOString()},
@@ -286,12 +343,13 @@ export const saveFounderChallenge = createServerFn({ method: "POST" })
         submissions_close, voting_close, vote_budget, participation_points, vote_points,
         results_published, kind, active, cancelled
       ) values (
-        ${id}, ${data.title.trim()}, ${data.description.trim()}, ${image}, ${data.theme.trim() || data.kind},
+        ${id}, ${data.title.trim()}, ${data.description.trim()}, ${chosen ?? ""}, ${data.theme.trim() || data.kind},
         ${start.toISOString()}, ${end.toISOString()},
         ${data.pointsFirst}, ${data.pointsSecond}, ${data.pointsThird}, false, ${season[0]?.id ?? ""},
         ${end.toISOString()}, ${end.toISOString()}, ${budget}, ${participation}, 5, false, ${data.kind}, true, false
       )
     `;
+    await copyKindBands(sql, data.kind, id);
     return { ok: true as const, id };
   });
 

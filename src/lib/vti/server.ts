@@ -5,6 +5,7 @@ import { getSql, type Sql } from "@/lib/db";
 import { finalizeCompetitions } from "@/lib/vti/competition";
 import { FOUNDER_EMAIL, isFounderEmail } from "@/lib/vti/founder";
 import { LEVELS } from "@/lib/vti/levels";
+import { challengeHasStages, changeWallet, grantEntryBonus, loadStages, loadTwists, refreshWallet } from "@/lib/vti/runway";
 import type {
   ChallengeBoard,
   ChallengeDetail,
@@ -201,6 +202,8 @@ export const updateProfile = createServerFn({ method: "POST" })
       robloxUsername: z.string().max(40).optional(),
       robloxUrl: z.string().max(200).optional(),
       showPersonal: z.boolean().optional(),
+      gender: z.string().max(40).optional(),
+      showGender: z.boolean().optional(),
       avatarDataUrl: z.string().max(700_000).nullable().optional(),
     }).parse(input),
   )
@@ -221,6 +224,17 @@ export const updateProfile = createServerFn({ method: "POST" })
       select user_id from profiles where username = ${username} and user_id <> ${context.userId}
     `;
     if (clash.length) return { ok: false as const, error: "That username is taken." };
+    const gender = clean(data.gender, 40);
+    if (gender) {
+      const options = await sql<{ id: string; label: string }>`
+        select id, label from gender_options where active = true
+      `;
+      const labels = options.map((option) => option.label);
+      const customOn = options.some((option) => option.id === "g_custom" || option.label.toLowerCase() === "custom");
+      if (!labels.includes(gender) && !customOn) {
+        return { ok: false as const, error: "Choose a gender option from the list, or leave it blank." };
+      }
+    }
     await sql`
       update profiles set
         username = ${username},
@@ -235,6 +249,8 @@ export const updateProfile = createServerFn({ method: "POST" })
         roblox_username = ${clean(data.robloxUsername, 40)},
         roblox_url = ${clean(data.robloxUrl, 200)},
         show_personal = ${data.showPersonal !== false},
+        gender = ${gender},
+        show_gender = ${data.showGender === true},
         avatar_url = coalesce(${data.avatarDataUrl ?? null}, avatar_url)
       where user_id = ${context.userId}
     `;
@@ -246,7 +262,7 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     ? await sql<Record<string, unknown>>`
         select p.user_id, p.username, p.display_name, p.bio, p.avatar_url, p.impress_points, p.challenge_wins, p.top_placements,
           p.role, p.level_key, p.verified, p.is_test, p.pronouns, p.location, p.website, p.instagram, p.tiktok, p.x_handle,
-          p.roblox_username, p.roblox_url, p.show_personal,
+          p.roblox_username, p.roblox_url, p.show_personal, p.gender, p.show_gender,
           (p.follower_base + (select count(*)::int from follows f where f.following_id = p.user_id)) as followers,
           (p.following_base + (select count(*)::int from follows f where f.follower_id = p.user_id)) as following_count,
           (select count(*)::int from posts po where po.user_id = p.user_id) as post_count,
@@ -257,7 +273,7 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     : await sql<Record<string, unknown>>`
         select p.user_id, p.username, p.display_name, p.bio, p.avatar_url, p.impress_points, p.challenge_wins, p.top_placements,
           p.role, p.level_key, p.verified, p.is_test, p.pronouns, p.location, p.website, p.instagram, p.tiktok, p.x_handle,
-          p.roblox_username, p.roblox_url, p.show_personal,
+          p.roblox_username, p.roblox_url, p.show_personal, p.gender, p.show_gender,
           (p.follower_base + (select count(*)::int from follows f where f.following_id = p.user_id)) as followers,
           (p.following_base + (select count(*)::int from follows f where f.follower_id = p.user_id)) as following_count,
           (select count(*)::int from posts po where po.user_id = p.user_id) as post_count,
@@ -289,6 +305,9 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     points: asNum(p.points),
   }));
   const level = await ladderFor(sql, asNum(row.impress_points));
+  const choices = await sql<{ label: string }>`
+    select label from gender_options where active = true order by sort_order asc, label asc
+  `;
   const auth = await sql<{ email: string }>`select "email" as email from "user" where "id" = ${id}`;
   const authEmail = auth[0]?.email ?? null;
   const founder = String(row.role) === "founder" && !asBool(row.is_test) && isFounderEmail(authEmail);
@@ -325,6 +344,9 @@ async function loadProfile(sql: Sql, me: string, username?: string): Promise<Pro
     robloxUsername: share ? String(row.roblox_username ?? "") : "",
     robloxUrl: share ? String(row.roblox_url ?? "") : "",
     showPersonal,
+    gender: isSelf || asBool(row.show_gender) ? String(row.gender ?? "") : "",
+    showGender: asBool(row.show_gender),
+    genderChoices: choices.map((choice) => choice.label),
     posts: posts.map((p) => ({ id: p.id, imageUrl: p.image_url })),
     placements: mapped,
   };
@@ -520,7 +542,7 @@ function mapChallenge(row: Record<string, unknown>): ChallengeSummary {
     voteBudget: asNum(row.vote_budget) || 10,
     isDemo: asBool(row.is_demo),
     seasonId: String(row.season_id ?? ""),
-    kind: String(row.kind) === "monthly" ? "monthly" : "weekly",
+    kind: (String(row.kind) === "daily" || String(row.kind) === "monthly" ? String(row.kind) : "weekly") as ChallengeSummary["kind"],
     active: row.active == null ? true : asBool(row.active),
   };
 }
@@ -568,8 +590,8 @@ export const getFloor = createServerFn({ method: "GET" })
     const sql = await getSql();
     await awardIfDue(sql);
     const season = await loadSeason(sql);
-    const settings = await sql<{ theme_key: string }>`
-      select theme_key from platform_settings where id = 'current'
+    const settings = await sql<{ theme_key: string; accent_color: string; theme_name: string }>`
+      select theme_key, accent_color, theme_name from platform_settings where id = 'current'
     `;
     const themeKey = settings[0]?.theme_key || (season && !season.published && season.themeKey ? season.themeKey : "gloss");
     const themes = await sql<{ weekly_theme: string; monthly_theme: string }>`
@@ -589,6 +611,8 @@ export const getFloor = createServerFn({ method: "GET" })
       monthlyTheme: themes[0]?.monthly_theme ?? "",
       seasonTitle: season?.title ?? "",
       role: founder ? ("founder" as const) : ("member" as const),
+      accentColor: settings[0]?.accent_color ?? "",
+      themeName: settings[0]?.theme_name ?? "",
     };
   });
 
@@ -665,9 +689,9 @@ export const getChallenge = createServerFn({ method: "POST" })
     const summary = mapChallenge(rows[0]);
     const resultsPublic = summary.phase === "ended" && !summary.isDemo && asBool(rows[0].results_published);
     const subs = await sql<Record<string, unknown>>`
-      select s.id, s.post_id, s.user_id, s.created_at::text as created_at,
+      select s.id, s.post_id, s.user_id, s.stage_id, s.created_at::text as created_at,
         pr.username, pr.avatar_url, p.image_url, p.caption,
-        count(v.voter_id)::int as votes,
+        coalesce(sum(v.weight), 0)::int as votes,
         exists(select 1 from votes mv where mv.submission_id = s.id and mv.voter_id = ${me}) as voted_by_me
       from challenge_submissions s
       join profiles pr on pr.user_id = s.user_id
@@ -675,7 +699,7 @@ export const getChallenge = createServerFn({ method: "POST" })
       left join votes v on v.submission_id = s.id
       where s.challenge_id = ${data.id}
         and pr.is_demo = false
-      group by s.id, s.post_id, s.user_id, s.created_at, pr.username, pr.avatar_url, p.image_url, p.caption
+      group by s.id, s.post_id, s.user_id, s.stage_id, s.created_at, pr.username, pr.avatar_url, p.image_url, p.caption
       order by s.created_at asc
     `;
     const awarded = resultsPublic
@@ -701,18 +725,16 @@ export const getChallenge = createServerFn({ method: "POST" })
         place,
         points,
         pointsLabel: resultsPublic && place && place <= 3 ? `${points} pts` : "",
+        stageId: String(s.stage_id ?? ""),
       };
     });
     if (resultsPublic) ranking.sort((a, b) => (a.place ?? 99) - (b.place ?? 99));
-    const mine = ranking.find((r) => r.userId === me) ?? null;
-    const usedRow = await sql<{ n: number }>`
-      select count(*)::int as n
-      from votes v
-      join challenge_submissions s on s.id = v.submission_id
-      where v.voter_id = ${me} and s.challenge_id = ${data.id}
-    `;
-    const votesUsed = asNum(usedRow[0]?.n);
-    const eligible = mine || summary.phase !== "open"
+    const stages = await loadStages(sql, data.id);
+    const twists = await loadTwists(sql, data.id, true);
+    const wallet = await refreshWallet(sql, me);
+    const openStageId = stages.find((stage) => stage.open)?.id ?? "";
+    const mine = ranking.find((row) => row.userId === me && (stages.length === 0 || row.stageId === openStageId)) ?? null;
+    const eligible = mine || summary.phase !== "open" || (stages.length > 0 && !openStageId)
       ? []
       : await sql<{ id: string; image_url: string; caption: string }>`
           select id, image_url, caption from posts
@@ -725,11 +747,15 @@ export const getChallenge = createServerFn({ method: "POST" })
       ranking,
       mySubmissionId: mine?.submissionId ?? null,
       eligiblePosts: eligible.map((p) => ({ id: p.id, imageUrl: p.image_url, caption: p.caption })),
-      canSubmit: summary.phase === "open" && !summary.isDemo,
+      canSubmit: summary.phase === "open" && !summary.isDemo && (stages.length === 0 || Boolean(openStageId)),
       canVote: (summary.phase === "open" || summary.phase === "voting") && !summary.isDemo,
       resultsPublic,
-      votesUsed,
-      votesLeft: Math.max(0, summary.voteBudget - votesUsed),
+      votesUsed: Math.max(0, wallet.max - wallet.balance),
+      votesLeft: wallet.balance,
+      wallet: { balance: wallet.balance, max: wallet.max, regen: wallet.regen, nextInMs: wallet.nextInMs },
+      stages,
+      twists,
+      openStageId,
     };
   });
 
@@ -759,6 +785,7 @@ export const createPost = createServerFn({ method: "POST" })
       imageDataUrls: z.array(z.string().min(32).max(1_200_000)).min(1).max(24).optional(),
       caption: z.string().max(300),
       challengeId: z.string().max(80).nullable().optional(),
+      stageId: z.string().max(80).optional(),
     }).parse(input),
   )
   .middleware([authMiddleware])
@@ -778,15 +805,42 @@ export const createPost = createServerFn({ method: "POST" })
     if (challengeId) {
       const open = await challengeOpen(sql, challengeId);
       if (!open.ok) return open;
+      const staged = await challengeHasStages(sql, challengeId);
+      let stageId = "";
+      if (staged) {
+        const stages = await loadStages(sql, challengeId);
+        const current = stages.find((stage) => stage.open);
+        if (!current) return { ok: false as const, error: "The current stage is not open yet." };
+        if (data.stageId && data.stageId !== current.id) return { ok: false as const, error: "That stage is not open." };
+        stageId = current.id;
+      }
       const already = await sql`
-        select id from challenge_submissions where challenge_id = ${challengeId} and user_id = ${me}
+        select id from challenge_submissions
+        where challenge_id = ${challengeId} and user_id = ${me} and stage_id = ${stageId}
       `;
-      if (already.length) return { ok: false as const, error: "You already entered this challenge." };
+      if (already.length) return { ok: false as const, error: staged ? "You already entered this stage." : "You already entered this challenge." };
+      const postId = `p_${crypto.randomUUID()}`;
+      await sql`
+        insert into posts (id, user_id, image_url, caption, challenge_id)
+        values (${postId}, ${me}, ${images[0]}, ${caption}, ${challengeId})
+      `;
+      for (let i = 0; i < images.length; i += 1) {
+        await sql`
+          insert into post_images (post_id, position, image_url)
+          values (${postId}, ${i}, ${images[i]})
+        `;
+      }
+      await sql`
+        insert into challenge_submissions (id, challenge_id, post_id, user_id, stage_id)
+        values (${`s_${crypto.randomUUID()}`}, ${challengeId}, ${postId}, ${me}, ${stageId})
+      `;
+      await grantEntryBonus(sql, me);
+      return { ok: true as const, id: postId, challengeId };
     }
     const postId = `p_${crypto.randomUUID()}`;
     await sql`
       insert into posts (id, user_id, image_url, caption, challenge_id)
-      values (${postId}, ${me}, ${images[0]}, ${caption}, ${challengeId})
+      values (${postId}, ${me}, ${images[0]}, ${caption}, ${null})
     `;
     for (let i = 0; i < images.length; i += 1) {
       await sql`
@@ -794,13 +848,7 @@ export const createPost = createServerFn({ method: "POST" })
         values (${postId}, ${i}, ${images[i]})
       `;
     }
-    if (challengeId) {
-      await sql`
-        insert into challenge_submissions (id, challenge_id, post_id, user_id)
-        values (${`s_${crypto.randomUUID()}`}, ${challengeId}, ${postId}, ${me})
-      `;
-    }
-    return { ok: true as const, id: postId, challengeId };
+    return { ok: true as const, id: postId, challengeId: null };
   });
 
 export const submitExistingPost = createServerFn({ method: "POST" })
@@ -813,10 +861,19 @@ export const submitExistingPost = createServerFn({ method: "POST" })
     const me = context.userId;
     const open = await challengeOpen(sql, data.challengeId);
     if (!open.ok) return open;
+    const staged = await challengeHasStages(sql, data.challengeId);
+    let stageId = "";
+    if (staged) {
+      const stages = await loadStages(sql, data.challengeId);
+      const current = stages.find((stage) => stage.open);
+      if (!current) return { ok: false as const, error: "The current stage is not open yet." };
+      stageId = current.id;
+    }
     const already = await sql`
-      select id from challenge_submissions where challenge_id = ${data.challengeId} and user_id = ${me}
+      select id from challenge_submissions
+      where challenge_id = ${data.challengeId} and user_id = ${me} and stage_id = ${stageId}
     `;
-    if (already.length) return { ok: false as const, error: "You already entered this challenge." };
+    if (already.length) return { ok: false as const, error: staged ? "You already entered this stage." : "You already entered this challenge." };
     const post = await sql<{ challenge_id: string | null }>`
       select challenge_id from posts where id = ${data.postId} and user_id = ${me}
     `;
@@ -824,9 +881,10 @@ export const submitExistingPost = createServerFn({ method: "POST" })
     if (post[0].challenge_id) return { ok: false as const, error: "That look is already in a challenge." };
     await sql`update posts set challenge_id = ${data.challengeId} where id = ${data.postId} and user_id = ${me}`;
     await sql`
-      insert into challenge_submissions (id, challenge_id, post_id, user_id)
-      values (${`s_${crypto.randomUUID()}`}, ${data.challengeId}, ${data.postId}, ${me})
+      insert into challenge_submissions (id, challenge_id, post_id, user_id, stage_id)
+      values (${`s_${crypto.randomUUID()}`}, ${data.challengeId}, ${data.postId}, ${me}, ${stageId})
     `;
+    await grantEntryBonus(sql, me);
     return { ok: true as const };
   });
 
@@ -861,33 +919,36 @@ export const toggleVote = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Voting is closed." };
     }
     if (sub[0].user_id === me) return { ok: false as const, error: "You cannot vote for your own look." };
-    const existing = await sql`
-      select 1 as one from votes where voter_id = ${me} and submission_id = ${data.submissionId}
+    const existing = await sql<{ weight: number }>`
+      select weight from votes where voter_id = ${me} and submission_id = ${data.submissionId}
     `;
+    const pack = (voted: boolean, wallet: { balance: number; max: number; regen: number; nextInMs: number | null }) => ({
+      ok: true as const,
+      voted,
+      votesUsed: Math.max(0, wallet.max - wallet.balance),
+      votesLeft: wallet.balance,
+      wallet,
+    });
     if (existing.length) {
-      await sql`delete from votes where voter_id = ${me} and submission_id = ${data.submissionId}`;
-    } else {
-      const budget = Math.max(1, asNum(sub[0].vote_budget) || 10);
-      const used = await sql<{ n: number }>`
-        select count(*)::int as n
-        from votes v
-        join challenge_submissions s on s.id = v.submission_id
-        where v.voter_id = ${me} and s.challenge_id = ${sub[0].challenge_id}
-      `;
-      if (asNum(used[0]?.n) >= budget) {
-        return { ok: false as const, error: `You have used all ${budget} competitive votes for this challenge.` };
+      const rules = await refreshWallet(sql, me);
+      if (!rules.allowMulti) {
+        await sql`delete from votes where voter_id = ${me} and submission_id = ${data.submissionId}`;
+        const wallet = await changeWallet(sql, me, Math.max(1, asNum(existing[0].weight)));
+        return pack(false, wallet);
       }
-      await sql`insert into votes (voter_id, submission_id) values (${me}, ${data.submissionId})`;
+      if (rules.balance < 1) return { ok: false as const, error: "You are out of votes. They come back on their own." };
+      await sql`
+        update votes set weight = weight + 1
+        where voter_id = ${me} and submission_id = ${data.submissionId}
+      `;
+      const wallet = await changeWallet(sql, me, -1);
+      return pack(true, wallet);
     }
-    const left = await sql<{ n: number }>`
-      select count(*)::int as n
-      from votes v
-      join challenge_submissions s on s.id = v.submission_id
-      where v.voter_id = ${me} and s.challenge_id = ${sub[0].challenge_id}
-    `;
-    const votesUsed = asNum(left[0]?.n);
-    const voteBudget = Math.max(1, asNum(sub[0].vote_budget) || 10);
-    return { ok: true as const, voted: !existing.length, votesUsed, votesLeft: Math.max(0, voteBudget - votesUsed) };
+    const ready = await refreshWallet(sql, me);
+    if (ready.balance < 1) return { ok: false as const, error: "You are out of votes. They come back on their own." };
+    await sql`insert into votes (voter_id, submission_id, weight) values (${me}, ${data.submissionId}, 1)`;
+    const wallet = await changeWallet(sql, me, -1);
+    return pack(true, wallet);
   });
 
 async function requireFounder(sql: Sql, userId: string) {
@@ -925,8 +986,7 @@ export const createWeeklyChallenge = createServerFn({ method: "POST" })
       limit 1
     `;
     const id = `ch_${crypto.randomUUID()}`;
-    const themeKey = season[0]?.theme_key ?? "gloss";
-    const image = themeKey === "haunted" ? "/media/brand/haunted.jpg" : "/media/brand/lineup.jpg";
+    const image = "";
     await sql`
       insert into challenges (
         id, title, description, image_url, theme, start_date, end_date,

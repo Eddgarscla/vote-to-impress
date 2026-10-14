@@ -33,3 +33,18 @@ export async function compressAvatar(file: File): Promise<string> {
     URL.revokeObjectURL(url);
   }
 }
+
+export async function compressLook(src: string): Promise<string> {
+  const img = await loadImage(src);
+  const maxW = 1200;
+  const scale = Math.min(1, maxW / Math.max(1, img.naturalWidth));
+  const width = Math.max(1, Math.round(img.naturalWidth * scale));
+  const height = Math.max(1, Math.round(img.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not prepare that photo.");
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", 0.82);
+}

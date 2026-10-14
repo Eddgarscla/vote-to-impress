@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
 export function Button({
@@ -62,6 +62,39 @@ export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
       )}
     />
   );
+}
+
+export function NumberField({
+  label,
+  value,
+  onChange,
+  max = 1000000,
+}: {
+  label?: string;
+  value: number;
+  onChange: (value: number | null) => void;
+  max?: number;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? String(value);
+  const input = (
+    <input
+      inputMode="numeric"
+      autoComplete="off"
+      aria-label={label}
+      value={shown}
+      onFocus={() => setDraft((current) => current ?? String(value))}
+      onChange={(event) => {
+        const raw = event.target.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+        setDraft(raw);
+        onChange(raw === "" ? null : Math.min(max, Number(raw)));
+      }}
+      onBlur={() => setDraft(null)}
+      className="h-12 w-full rounded-xl border border-line bg-surface px-3 text-base text-ink outline-none focus:border-ink"
+    />
+  );
+  if (!label) return input;
+  return <Field label={label}>{input}</Field>;
 }
 
 export function LoadingBlock({ label = "Loading" }: { label?: string }) {
